@@ -50,6 +50,21 @@ class BPE_Tokenizer:
     #         texts = new_texts
     #     return texts
     
+    # TODO fix split_on_ST in helpers
+    # def _split_keep_delimiters(self, text):
+    #     # TODO order special tokens by length (longest to shortest)
+    #     # TODO split on the special tokens and keep the delimiters
+    #     # TODO append the results together into one list 
+    #     texts = [text]
+    #     ordered_special_tokens = sorted(self.special_tokens, key=len, reverse=True)
+    #     for special_token in ordered_special_tokens:
+    #         pattern = '|'.join(map(re.escape, [special_token]))
+    #         new_texts = []
+    #         for text in texts:
+    #             new_texts.extend([x for x in re.split(f'({pattern})', text) if x != '']) 
+    #         texts = new_texts
+    #     return texts
+    
     def _split_keep_delimiters(self, text):
         # order special tokens by length (longest to shortest)
         # split on the special tokens and keep the delimiters
