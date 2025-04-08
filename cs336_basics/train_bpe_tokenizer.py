@@ -4,9 +4,26 @@ from typing import List, Dict
 PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 
 def split_on_ST(text, special_tokens):
-    pattern = '|'.join(map(re.escape, special_tokens))
-    text_split_by_ST = re.split(pattern, text)
-    return [x for x in text_split_by_ST if x != '']  
+    # handle overlapping special tokens
+    # does not include special tokens in the result
+    texts = [text]
+    ordered_special_tokens = sorted(special_tokens, key=len, reverse=True)
+    for special_token in ordered_special_tokens:
+        i = len(texts) - 1
+        while i >= 0:
+            curr_text = texts[i]
+            new_texts = []
+            if (curr_text not in ordered_special_tokens):
+                if (special_token in curr_text):
+                    split_text = curr_text.split(special_token)
+                    new_texts.extend(split_text) 
+                else: 
+                    new_texts.append(curr_text)
+            else:
+                new_texts.append(curr_text)
+            texts = texts[:i] + new_texts + texts[i+1:]
+            i -= 1
+    return [x for x in texts if x != ''] 
 
 def train_bpe(input_path: str,
                  vocab_size: int,

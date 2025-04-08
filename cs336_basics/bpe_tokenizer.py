@@ -24,21 +24,60 @@ class BPE_Tokenizer:
         return self._encode(text)
     
     def encode_iterable(self, file: Iterable[str]) -> Iterator[int]:
-        line = read_data_for_tokenization(file)
-        yield self._encode(line)
+        for line in read_data_for_tokenization(file):
+            ids =  self._encode(line)
+            for id in ids:
+                yield id
 
     def decode(self, ids: list[int]) -> str:
         decoded_text = b''
         for token_id in ids:
             decoded_text += self.vocab[token_id]
-        # breakpoint()
         return bytes(decoded_text).decode("utf-8")
     
+    # TODO fix split_on_ST in helpers
+    # def _split_keep_delimiters(self, text):
+    #     # TODO order special tokens by length (longest to shortest)
+    #     # TODO split on the special tokens and keep the delimiters
+    #     # TODO append the results together into one list 
+    #     texts = [text]
+    #     ordered_special_tokens = sorted(self.special_tokens, key=len, reverse=True)
+    #     for special_token in ordered_special_tokens:
+    #         pattern = '|'.join(map(re.escape, [special_token]))
+    #         new_texts = []
+    #         for text in texts:
+    #             new_texts.extend([x for x in re.split(f'({pattern})', text) if x != '']) 
+    #         texts = new_texts
+    #     return texts
+    
     def _split_keep_delimiters(self, text):
-        # Delimiters for regex, then join them with '|'
-        pattern = '|'.join(map(re.escape, self.special_tokens))
-        text_split_by_ST = re.split(f'({pattern})', text)
-        return [x for x in text_split_by_ST if x != '']  
+        # order special tokens by length (longest to shortest)
+        # split on the special tokens and keep the delimiters
+        # append the results together into one list 
+        texts = [text]
+        ordered_special_tokens = sorted(self.special_tokens, key=len, reverse=True)
+        for special_token in ordered_special_tokens:
+            i = len(texts) - 1
+            while i >= 0:
+                curr_text = texts[i]
+                new_texts = []
+                if (curr_text not in ordered_special_tokens):
+                    if (special_token in curr_text):
+                        split_text = curr_text.split(special_token)
+                        split_text_with_delimiter = []
+                        for j in range(len(split_text)-1):
+                            split_text_with_delimiter.append(split_text[j])
+                            split_text_with_delimiter.append(special_token)
+                        split_text_with_delimiter.append(split_text[-1])
+                        new_texts.extend(split_text_with_delimiter) 
+                    else: 
+                        new_texts.append(curr_text)
+                else:
+                    new_texts.append(curr_text)
+
+                texts = texts[:i] + new_texts + texts[i+1:]
+                i -= 1
+        return [x for x in texts if x != ''] 
 
     def _encode(self, text): 
         """Encodes the text using the merges and vocab_to_id. The text may contain special tokens."""
@@ -55,7 +94,6 @@ class BPE_Tokenizer:
                 tokenized_text, token_ids = self._encode_nonspecial_text(text_fragment)
                 all_tokenized_text.extend(tokenized_text)
                 all_token_ids.extend(token_ids)
-            # breakpoint()
         # text is a document or fragment of a document
         return all_token_ids
 
