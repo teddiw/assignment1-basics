@@ -5,33 +5,40 @@ import os
 import tqdm
 import time
 import pickle
+import heapq
 
 
 def main():
-    vocab_files = ['ts_train_vocab.pickle', 'TinyStoriesV2_vocab.pickle']  # Add other vocab files as needed
+    data_str = 'ts_train'
+    time1 = time.time()
+    if (data_str == 'ts_valid'): # 22502601 bytes (.023 GB)
+        input_path= "../data/TinyStoriesV2-GPT4-valid.txt" 
+        vocab_size = 10000
+    elif (data_str == 'ts_train'): # 2227753162 bytes (2.23 GB)
+        input_path= "../data/TinyStoriesV2-GPT4-train.txt" 
+        vocab_size = 10000 
+    elif(data_str == 'owt_train'): # 11920511059 bytes (11.92 GB)
+        input_path= "../data/owt_train.txt"
+        vocab_size = 32000
+    elif(data_str == 'owt_valid'): # 289998753 bytes (.29 GB)
+        input_path= "../data/owt_valid.txt"
+        vocab_size = 32000
+    else:
+        print('Invalid data_str. Exiting...')
+        exit(1)
 
-    vocabularies = {}
-    vocabularies_i = 0
-    for vocab_file in vocab_files:
-        with open(vocab_file, 'rb') as f:
-            vocabularies[vocabularies_i] = pickle.load(f)
-        vocabularies_i += 1
-    assert len(vocabularies[0]) == len(vocabularies[1])
-
-    longest_token0 = ""
-    longest_token1 = ""
-    for i in range(len(vocabularies[0])):
-        token0 = vocabularies[0][i]
-        token1 = vocabularies[1][i]
-        if len(token0) > len(longest_token0):
-            longest_token0 = token0
-        if len(token1) > len(longest_token1):
-            longest_token1 = token1
+    t_results_fp = "t_results/"
+        
+    with open(t_results_fp+data_str+f'_vocab_newP_{vocab_size}.pickle', 'rb') as handle:
+        vocab = pickle.load(handle)
     
-    print(longest_token0)
-    print(longest_token1)
+    longest_value = ''
+    for key, value in vocab.items():
+        if (len(longest_value) < len(value)):
+            longest_value = value
+    
+    print('longest token is:', longest_value.decode())
     breakpoint()
-
 
 if __name__ == '__main__':
     main()

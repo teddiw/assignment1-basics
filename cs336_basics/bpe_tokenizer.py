@@ -33,7 +33,7 @@ class BPE_Tokenizer:
         decoded_text = b''
         for token_id in ids:
             decoded_text += self.vocab[token_id]
-        return bytes(decoded_text).decode("utf-8")
+        return bytes(decoded_text).decode("utf-8", errors='replace')
     
     # TODO fix split_on_ST in helpers
     # def _split_keep_delimiters(self, text):

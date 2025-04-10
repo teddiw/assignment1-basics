@@ -4,7 +4,7 @@ import cProfile
 import multiprocessing as mp 
 import time
 import pickle 
-from helpers import pretokenize_and_count_frequencies
+from cs336_basics.helpers import pretokenize_and_count_frequencies
 from tqdm import tqdm
 
 PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
@@ -29,23 +29,20 @@ def _train_bpe(pre_token_frequencies: Dict[tuple[bytes], int],
     merges: List[tuple[bytes]] = []
     for i in range(num_merges):
 
-        # pick the successive_candidates entry with the highest frequency
-        maxValue = max(successive_frequencies.values())
-        successives_to_merge = max([k for k, v in successive_frequencies.items() if v == maxValue])
+        successives_to_merge = get_max_successive(successive_frequencies) 
+
         merged_bytes = successives_to_merge[0] + successives_to_merge[1]
 
         merges.append(successives_to_merge)
         vocab[len(vocab)] = merged_bytes
         
+        # iterate through to find the pre_tokens that contain the successive bytes
         pre_token_ls = list(pre_token_frequencies.keys())
         for pre_token_bytes_tuple in pre_token_ls:
             need_to_process = False
-            i = 0
-            while i < len(pre_token_bytes_tuple) - 1: 
-                if pre_token_bytes_tuple[i:i+2] == successives_to_merge:
-                    need_to_process = True
-                    break
-                i += 1
+            if (successives_to_merge[0] in pre_token_bytes_tuple) and (successives_to_merge[1] in pre_token_bytes_tuple):
+                need_to_process = get_need_to_process(pre_token_bytes_tuple, successives_to_merge) 
+            
             if need_to_process:
                 # create the updated pre_token_bytes_tuple and replace the old one in pre_token_frequencies
                 # remove entries to successive_frequencies for the pre-tokens that contain the successive bytes. I.e. for ABCD, if merging BC, remove AB and CD counts
@@ -58,7 +55,25 @@ def _train_bpe(pre_token_frequencies: Dict[tuple[bytes], int],
                 successive_frequencies = count_successive_tokens(new_pre_token_bytes_tuple, pre_token_frequencies[new_pre_token_bytes_tuple], successive_frequencies, merged_bytes)
         
         del successive_frequencies[successives_to_merge]
+
     return vocab, merges
+
+def get_need_to_process(pre_token_bytes_tuple: tuple[bytes],
+                       successives_to_merge: tuple[bytes]) -> bool:
+    # function to check if the successive bytes are in the pre_token_bytes_tuple
+    need_to_process = False
+    i = 0
+    while i < len(pre_token_bytes_tuple) - 1: 
+        if pre_token_bytes_tuple[i:i+2] == successives_to_merge:
+            need_to_process = True
+            break
+        i += 1
+    return need_to_process
+
+def get_max_successive(successive_frequencies: Dict[tuple[bytes], int]) -> tuple[bytes]:
+    maxValue = max(successive_frequencies.values())
+    successives_to_merge = max([k for k, v in successive_frequencies.items() if v == maxValue])
+    return successives_to_merge
 
 def merge_successives(pre_token_bytes_tuple: tuple[bytes], 
                       successives_to_merge: tuple[bytes],
@@ -104,80 +119,95 @@ def combine_pre_token_frequencies(pre_token_frequencies_list: List[Dict[tuple[by
             combined_pre_token_frequencies[pre_token] = combined_pre_token_frequencies.get(pre_token, 0) + count
     return combined_pre_token_frequencies
 
-def read_data(filename):
-    with open(filename) as file:
-        document = ""
-        for line in file:
-            if ('<|endoftext|>' in line):
-                line_components = line.split('<|endoftext|>')
-                document += line_components[0]
-                yield document
-                document = line_components[1]
-            else:
-                document += line
+def read_data(filename, special_tokens):
+    num_lines_per_chunk = 4096 # this is arbitrary
+    with open(filename, 'r') as file:
+        document_chunk = ""
+        pos = file.tell()
+        file.seek(0, 2)  # Seek to end of file
+        file_size = file.tell() 
+        file.seek(pos)
+        while pos < file_size:
+            i = 0
+            while (i < num_lines_per_chunk) or ((i >= num_lines_per_chunk) and ('<|endoftext|>' not in document_chunk)): # ensures that <|endoftext|> is in the chunk
+                line = file.readline()
+                if (line == ''):  # if eof is reached
+                    if (len(document_chunk) > 0):
+                        yield (filename, pos, len(document_chunk.encode('utf-8')), special_tokens)
+                    break
+                else: 
+                    document_chunk += line
+                i += 1
+            if (line == ''):
+                break
+            document_chunk_splits = document_chunk.split('<|endoftext|>')
+            curr_document_chunk = '<|endoftext|>'.join(document_chunk_splits[:-1])+'<|endoftext|>'
+            document_chunk = document_chunk_splits[-1] # start of the next document_chunk
+            next_pos = file.tell() - len(document_chunk.encode('utf-8')) 
+            size = len(curr_document_chunk.encode('utf-8'))
+            yield (filename, pos, size, special_tokens)
+            pos = next_pos
 
 if __name__ == "__main__":
-    data_str = 'owt_train'
+    data_str = 'ts_train'
     time1 = time.time()
-    if (data_str == 'ts_valid'):
-        input_path= "/nlp/scr/worledge/data/TinyStoriesV2-GPT4-valid.txt" 
+    if (data_str == 'ts_valid'): # 22502601 bytes (.023 GB)
+        input_path= "../data/TinyStoriesV2-GPT4-valid.txt" 
         vocab_size = 10000
-    elif (data_str == 'ts_train'):
+    elif (data_str == 'ts_train'): # 2227753162 bytes (2.23 GB)
         input_path= "../data/TinyStoriesV2-GPT4-train.txt" 
-        vocab_size = 10000
-    elif(data_str == 'owt_train'):
+        vocab_size = 10000 
+    elif(data_str == 'owt_train'): # 11920511059 bytes (11.92 GB)
         input_path= "../data/owt_train.txt"
+        vocab_size = 32000
+    elif(data_str == 'owt_valid'): # 289998753 bytes (.29 GB)
+        input_path= "../data/owt_valid.txt"
         vocab_size = 32000
     else:
         print('Invalid data_str. Exiting...')
         exit(1)
 
+    t_results_fp = "t_results/"
     special_tokens = ['<|endoftext|>']
 
-    profiler = cProfile.Profile()
-    profiler.enable()
-
-    # with open(input_path, "r", encoding="utf-8") as f:
-    #     text = f.read()
-
-    data_iterator = read_data(input_path)
+    data_iterator = read_data(input_path, special_tokens)
     print('Created data iterator. Collecting results from processes...')
-    # pre_token_frequencies = pretokenize(text)
-    # documents = [d for d in text.split("<|endoftext|>")]
 
     pre_token_frequencies = {}
-    def log_pre_token_frequencies(result: Dict[tuple[bytes], int]) -> Dict[tuple[bytes], int]:
+    def log_pre_token_frequencies(result: Dict[tuple[bytes], int]) -> Dict[tuple[bytes], int]: 
         # This is called whenever the pool returns a result.
         # result_list is modified only by the main process, not the pool workers.
         for pre_token, count in result.items():
             pre_token_frequencies[pre_token] = pre_token_frequencies.get(pre_token, 0) + count
         return pre_token_frequencies
 
-    pool = mp.Pool(processes=8)
-    for x in tqdm(data_iterator):
-        pool.apply_async(pretokenize_and_count_frequencies, args = (x,special_tokens), callback = log_pre_token_frequencies)
-    pool.close()
-    pool.join()
+    with mp.Pool(processes=8)  as pool:
+        for document in tqdm(data_iterator): # send over the file and the byte indices in larger chunks. The use seek to get the text.
+            pool.apply_async(pretokenize_and_count_frequencies, args = document, callback=log_pre_token_frequencies)
+        pool.close()
+        pool.join()
 
-    # pool = mp.Pool(processes=8)
-    # results = [pool.apply_async(pretokenize, args=(x,special_tokens)) for x in data_iterator]
-    # print('Collecting results from processes...')
-    # result_ls = [r.get() for r in results]
-    # pre_token_frequencies = combine_pre_token_frequencies(result_ls)
+    print('Took this many seconds to get pre_token_frequencies', time.time() - time1)
+    with open(t_results_fp+data_str+f'_pre_token_frequencies_{vocab_size}.pickle', 'wb') as handle:
+        pickle.dump(pre_token_frequencies, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    
     print('Collected! Training BPE...')
     
+    # profiler = cProfile.Profile()
+    # profiler.enable()
     vocab, merges = _train_bpe(
         pre_token_frequencies,
         vocab_size=vocab_size, 
         special_tokens=special_tokens)
+    # profiler.disable()
+    # profiler.print_stats(sort='cumtime')   
     print('Done.')
     
-    with open(data_str+'_vocab.pickle', 'wb') as handle:
+    with open(t_results_fp+data_str+f'_vocab_newP_{vocab_size}.pickle', 'wb') as handle:
         pickle.dump(vocab, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-    with open(data_str+'_merges.pickle', 'wb') as handle:
+    with open(t_results_fp+data_str+f'_merges_newP_{vocab_size}.pickle', 'wb') as handle:
         pickle.dump(merges, handle, protocol=pickle.HIGHEST_PROTOCOL)
     
-    print("Total time: ", time.time() - time1)
-    profiler.disable()
-    profiler.print_stats(sort='cumtime')    
+    print("Total time: ", time.time() - time1) 
+
