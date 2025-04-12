@@ -12,6 +12,7 @@ from torch import Tensor
 # teddi implementation imports
 from cs336_basics.train_bpe_tokenizer import train_bpe
 from cs336_basics.bpe_tokenizer import BPE_Tokenizer
+from cs336_basics.linear import Linear
 
 def run_linear(
     d_in: int,
@@ -32,7 +33,7 @@ def run_linear(
         Float[Tensor, "... d_out"]: The transformed output of your linear module.
     """
 
-    raise NotImplementedError
+    raise Linear(d_in, d_out, weights=weights).forward(in_features)
 
 
 def run_embedding(

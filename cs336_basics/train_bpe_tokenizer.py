@@ -1,6 +1,6 @@
 import regex as re
 from typing import List, Dict
-from cs336_basics.train_bpe_tokenizer_fast import _train_bpe
+from cs336_basics.train_bpe_tokenizer_faster import _train_bpe
 from cs336_basics.helpers import pretokenize_and_count_frequencies
 
 def train_bpe(input_path: str,
@@ -15,3 +15,10 @@ def train_bpe(input_path: str,
     pre_token_frequencies: Dict[tuple[bytes], int] = pretokenize_and_count_frequencies(input_path, 0, size, special_tokens)
 
     return _train_bpe(pre_token_frequencies, vocab_size, special_tokens)
+
+
+if __name__ == "__main__":
+    input_path = 'test.txt'
+    vocab_size = 256+10
+    special_tokens = []
+    vocab, merges = train_bpe(input_path, vocab_size, special_tokens)
