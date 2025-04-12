@@ -26,7 +26,7 @@ class Linear(nn.Module):
             sigma = np.sqrt(2/(in_features + out_features))
             initialized_weights = torch.nn.init.trunc_normal_(weights, mean=0, std=sigma, a=-3*sigma, b=3*sigma)
             self.weights = nn.Parameter(initialized_weights, requires_grad=True)
-
+        self.weights = self.weights.to(device)
     def forward(self, 
                 x: torch.Tensor,
                 ) -> torch.Tensor:
@@ -53,7 +53,7 @@ class Embedding(nn.Module):
             embeddings = torch.zeros([num_embeddings, embedding_dim])
             initialized_embeddings = torch.nn.init.trunc_normal_(embeddings, mean=0, std=1, a=-3, b=3)
             self.embeddings = nn.Parameter(initialized_embeddings, requires_grad=True)
-        
+        self.embeddings = self.embeddings.to(device)
     def forward(self,
                 token_ids: Int[LongTensor, "batch seq"],
                 ) -> Float[Tensor, "batch seq d_model"]:
@@ -81,6 +81,7 @@ class RMSNorm(nn.Module):
             gains = nn.Parameter(initialized_weights, requires_grad=True)
         
         self.gains = rearrange(gains, 'd_model -> 1 1 d_model')
+        self.gains = self.gains.to(device)
 
     def forward(self, 
                 x: Float[Tensor, "batch seq d_model"],
@@ -125,6 +126,10 @@ class PositionwiseFeedforward(nn.Module):
             self.w1 = nn.Parameter(initialized_w1, requires_grad=True)
             self.w2 = nn.Parameter(initialized_w2, requires_grad=True)
             self.w3 = nn.Parameter(initialized_w3, requires_grad=True)
+        
+        self.w1 = self.w1.to(device)
+        self.w2 = self.w2.to(device)
+        self.w3 = self.w3.to(device)
     
     def forward(self,
                 x: Float[Tensor, "batch seq d_model"],
@@ -135,3 +140,18 @@ class PositionwiseFeedforward(nn.Module):
         temp4 = temp2 * temp3
         result = einsum(temp4, self.w2, "batch seq d_ff, d_model  d_ff -> batch seq d_model")
         return result
+    
+class RotaryPositionalEmbedding(nn.Module):
+    def __init__(self,
+                 theta: float,
+                 d_k: int,
+                 max_seq_len: int,
+                 device: torch.device | None = None):
+        super(RotaryPositionalEmbedding, self).__init__()
+        self.theta = theta
+        self.d_k = d_k
+        self.max_seq_len = max_seq_len
+        self.device = device
+
+        # TODO move the inputs to the device
+        # TODO finish the __init__ of RotaryPositionalEmbedding
