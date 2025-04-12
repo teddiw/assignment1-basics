@@ -12,7 +12,7 @@ from torch import Tensor
 # teddi implementation imports
 from cs336_basics.train_bpe_tokenizer import train_bpe
 from cs336_basics.bpe_tokenizer import BPE_Tokenizer
-from cs336_basics.torch_modules.custom_modules import Linear, Embedding, RMSNorm
+from cs336_basics.torch_modules.custom_modules import Linear, Embedding, RMSNorm, PositionwiseFeedforward
 
 def run_linear(
     d_in: int,
@@ -87,7 +87,7 @@ def run_swiglu(
     # swiglu.w1.weight.data = w1_weight
     # swiglu.w2.weight.data = w2_weight
     # swiglu.w3.weight.data = w3_weight
-    raise NotImplementedError
+    return PositionwiseFeedforward(d_model, w1_weight=w1_weight, w2_weight=w2_weight, w3_weight=w3_weight, d_ff=d_ff).forward(in_features)
 
 
 def run_scaled_dot_product_attention(

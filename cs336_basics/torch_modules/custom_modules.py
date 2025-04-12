@@ -90,4 +90,48 @@ class RMSNorm(nn.Module):
         rms = torch.sqrt(reduce(x**2, 'batch seq d_model -> batch seq', 'mean')+ self.eps)
         result = x * self.gains / rearrange(rms, 'b s -> b s 1')
         return result.to(in_dtype)
-        
+    
+class PositionwiseFeedforward(nn.Module):
+    def __init__(self,
+                 d_model: int,
+                 device: torch.device | None = None,
+                 dtype: torch.dtype | None = None,
+                 d_ff: int = 0, # for testing purposes
+                 w1_weight: Float[Tensor, " d_ff d_model"] | None = None, # for testing purposes
+                 w2_weight: Float[Tensor, " d_model d_ff"] | None = None, # for testing purposes
+                 w3_weight: Float[Tensor, " d_ff d_model"] | None = None, # for testing purposes
+                ): 
+        super(PositionwiseFeedforward, self).__init__()
+        self.d_model = d_model
+        self.d_ff = int(((d_model * 8/3) // 64) * 64) # multiple of 64
+        self.device = device
+        self.dtype = dtype
+
+        if (w1_weight != None):
+            # assume d_ff, w2_weight, and w3_weight are also provided
+            self.w1 = nn.Parameter(w1_weight, requires_grad=True)
+            self.w2 = nn.Parameter(w2_weight, requires_grad=True)   
+            self.w3 = nn.Parameter(w3_weight, requires_grad=True)
+            self.d_ff = d_ff
+        else:
+            # initialize weights
+            weights1 = torch.zeros([self.d_ff, d_model])
+            weights2 = torch.zeros([d_model, self.d_ff])
+            weights3 = torch.zeros([self.d_ff, d_model])
+            sigma = np.sqrt(2/(self.d_ff, d_model))
+            initialized_w1 = torch.nn.init.trunc_normal_(weights1, mean=0, std=sigma, a=-3*sigma, b=3*sigma)
+            initialized_w2 = torch.nn.init.trunc_normal_(weights2, mean=0, std=sigma, a=-3*sigma, b=3*sigma)
+            initialized_w3 = torch.nn.init.trunc_normal_(weights3, mean=0, std=sigma, a=-3*sigma, b=3*sigma)
+            self.w1 = nn.Parameter(initialized_w1, requires_grad=True)
+            self.w2 = nn.Parameter(initialized_w2, requires_grad=True)
+            self.w3 = nn.Parameter(initialized_w3, requires_grad=True)
+    
+    def forward(self,
+                x: Float[Tensor, "batch seq d_model"],
+                ) -> Float[Tensor, "batch seq d_model"]:
+        temp1 = einsum(x, self.w1, "batch seq d_model, d_ff d_model -> batch seq d_ff")
+        temp2 = torch.sigmoid(temp1) * temp1
+        temp3 = einsum(x, self.w3, "batch seq d_model, d_ff  d_model -> batch seq d_ff")
+        temp4 = temp2 * temp3
+        result = einsum(temp4, self.w2, "batch seq d_ff, d_model  d_ff -> batch seq d_model")
+        return result
