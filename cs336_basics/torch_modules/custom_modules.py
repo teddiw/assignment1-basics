@@ -184,8 +184,21 @@ def softmax(x: Float[Tensor, "..."],
     x_exp_sum = torch.sum(x_exp, dim=dim, keepdim=True)
     return x_exp/x_exp_sum
 
-        
-        
+def scaled_dot_product_attention(Q: Float[Tensor, "... n_queries d_k"],
+                                 K: Float[Tensor, "... m_keys d_k"],
+                                 V: Float[Tensor, "... m_keys d_v"],
+                                 mask: Float[Tensor, "... n_queries m_keys"] | None = None, # " ... seq seq"
+                                 ) -> Float[Tensor, "... n_queries d_v"]:
+
+    temp1 = einsum(Q, K, "... n_queries d_k, ... m_keys d_k -> ... n_queries m_keys") / np.sqrt(Q.shape[-1])
+
+    if mask is not None:   
+        temp1 = temp1.masked_fill(mask == 0, -np.inf)
+
+    temp2 = softmax(temp1, dim=-1)
+
+    output = einsum(temp2, V, "... n_queries m_keys, ... m_keys d_v -> ... n_queries d_v")
+    return output
 
 # TODO move the inputs to the device
 # TODO make everything the specified dtype?
