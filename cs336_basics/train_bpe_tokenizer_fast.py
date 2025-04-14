@@ -177,7 +177,7 @@ def read_data(filename, special_tokens):
             pos = next_pos
 
 if __name__ == "__main__":
-    data_str = 'owt_valid'
+    data_str = 'ts_valid'
     time1 = time.time()
     if (data_str == 'ts_valid'): # 22502601 bytes (.023 GB) # len of successive_frequencies: 932 # len of pre_token_frequencies: 13125
         input_path= "../data/TinyStoriesV2-GPT4-valid.txt" 

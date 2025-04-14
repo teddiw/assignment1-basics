@@ -22,11 +22,10 @@ class Linear(nn.Module):
         if (weights != None):
             self.weights = nn.Parameter(weights, requires_grad=True)
         else:
-            weights = torch.zeros([out_features, in_features])
+            weights = torch.zeros([out_features, in_features], device=device, dtype=dtype)
             sigma = np.sqrt(2/(in_features + out_features))
             initialized_weights = torch.nn.init.trunc_normal_(weights, mean=0, std=sigma, a=-3*sigma, b=3*sigma)
             self.weights = nn.Parameter(initialized_weights, requires_grad=True)
-        self.weights = self.weights.to(device)
     def forward(self, 
                 x: torch.Tensor,
                 ) -> torch.Tensor:
@@ -50,10 +49,9 @@ class Embedding(nn.Module):
         if (weights != None):   
             self.embeddings = nn.Parameter(weights, requires_grad=True)
         else:
-            embeddings = torch.zeros([num_embeddings, embedding_dim])
+            embeddings = torch.zeros([num_embeddings, embedding_dim], device=device, dtype=dtype)
             initialized_embeddings = torch.nn.init.trunc_normal_(embeddings, mean=0, std=1, a=-3, b=3)
             self.embeddings = nn.Parameter(initialized_embeddings, requires_grad=True)
-        self.embeddings = self.embeddings.to(device)
     def forward(self,
                 token_ids: Int[LongTensor, "batch seq"],
                 ) -> Float[Tensor, "batch seq d_model"]:
@@ -77,11 +75,10 @@ class RMSNorm(nn.Module):
         if (weights != None):
             gains = nn.Parameter(weights, requires_grad=True)
         else:
-            initialized_weights = torch.ones(d_model)
+            initialized_weights = torch.ones(d_model, device=device, dtype=dtype)
             gains = nn.Parameter(initialized_weights, requires_grad=True)
         
         self.gains = rearrange(gains, 'd_model -> 1 1 d_model')
-        self.gains = self.gains.to(device)
 
     def forward(self, 
                 x: Float[Tensor, "batch seq d_model"],
@@ -116,9 +113,9 @@ class PositionwiseFeedforward(nn.Module):
             self.d_ff = d_ff
         else:
             # initialize weights
-            weights1 = torch.zeros([self.d_ff, d_model])
-            weights2 = torch.zeros([d_model, self.d_ff])
-            weights3 = torch.zeros([self.d_ff, d_model])
+            weights1 = torch.zeros([self.d_ff, d_model], device=device, dtype=dtype)
+            weights2 = torch.zeros([d_model, self.d_ff], device=device, dtype=dtype)
+            weights3 = torch.zeros([self.d_ff, d_model], device=device, dtype=dtype)
             sigma = np.sqrt(2/(self.d_ff, d_model))
             initialized_w1 = torch.nn.init.trunc_normal_(weights1, mean=0, std=sigma, a=-3*sigma, b=3*sigma)
             initialized_w2 = torch.nn.init.trunc_normal_(weights2, mean=0, std=sigma, a=-3*sigma, b=3*sigma)
@@ -126,10 +123,6 @@ class PositionwiseFeedforward(nn.Module):
             self.w1 = nn.Parameter(initialized_w1, requires_grad=True)
             self.w2 = nn.Parameter(initialized_w2, requires_grad=True)
             self.w3 = nn.Parameter(initialized_w3, requires_grad=True)
-        
-        self.w1 = self.w1.to(device)
-        self.w2 = self.w2.to(device)
-        self.w3 = self.w3.to(device)
     
     def forward(self,
                 x: Float[Tensor, "batch seq d_model"],
@@ -153,5 +146,41 @@ class RotaryPositionalEmbedding(nn.Module):
         self.max_seq_len = max_seq_len
         self.device = device
 
-        # TODO move the inputs to the device
-        # TODO finish the __init__ of RotaryPositionalEmbedding
+        # Create the positional encodings
+        assert self.d_k % 2 == 0
+        d_2 = self.d_k // 2
+        precomputed_rotation_matrices = torch.zeros([d_2*self.max_seq_len, 4], device=device)
+        for i in range(self.max_seq_len):
+            for k in range(0, d_2):
+                theta_k = i / (self.theta**(2*(k-1)/self.d_k))
+                precomputed_rotation_matrices[i*d_2+k, 0] = np.cos(theta_k)
+                precomputed_rotation_matrices[i*d_2+k, 1] = -np.sin(theta_k)
+                precomputed_rotation_matrices[i*d_2+k, 2] = np.sin(theta_k)
+                precomputed_rotation_matrices[i*d_2+k, 3] = np.cos(theta_k)
+        self.register_buffer('precomputed_rotation_matrices', precomputed_rotation_matrices, persistent=True)
+
+    def forward(self,
+                x: Float[Tensor, "... seq d_k"],
+                token_positions: Int[LongTensor, "... seq"],
+                ) -> Float[Tensor, "... seq d_k"]:
+        
+        if (token_positions == None):
+            token_positions = np.arange(x.size(1))
+        # breakpoint()
+        block_vector = rearrange(self.precomputed_rotation_matrices, '(seq d_k) (rot1 rot2) -> seq d_k rot1 rot2', seq=self.max_seq_len, rot1=2)
+        
+        rotation_matrices = torch.stack([torch.block_diag(*block_vector[i]) for i in range(self.max_seq_len)])
+        rotation_matrices = rotation_matrices[token_positions, :,:]
+        # rotation_matrices has shape (max_seq_len, d_k, d_k)
+        # breakpoint()
+        result = einsum(rotation_matrices, x, "seq d_k d_k, ... seq d_k -> ... seq d_k")
+        breakpoint()
+        return result
+
+
+        
+        
+
+# TODO move the inputs to the device
+# TODO make everything the specified dtype?
+

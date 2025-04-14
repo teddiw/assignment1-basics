@@ -12,8 +12,8 @@ PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s
 def _train_bpe(pre_token_frequencies: Dict[tuple[bytes], int],
                  vocab_size: int,
                  special_tokens: List[str] = []):
-    # profiler = cProfile.Profile()
-    # profiler.enable()
+    profiler = cProfile.Profile()
+    profiler.enable()
     
     vocab: Dict[int, bytes] = {}
 
@@ -65,39 +65,36 @@ def _train_bpe(pre_token_frequencies: Dict[tuple[bytes], int],
             successives_to_merge = next_successives_to_merge
             re_use = True
         
-    # profiler.disable()
-    # profiler.print_stats(sort='cumtime') 
+    profiler.disable()
+    profiler.print_stats(sort='cumtime') 
     # breakpoint()
     return vocab, merges
 
-# TODO is there a way we can aggregate changes we'll have to make and only make them when we have to? I.e. when the max frequency changes 
+# Is there a way we can aggregate changes we'll have to make and only make them when we have to? I.e. when the max frequency changes 
     # We want to update pre_token_frequencies when:
         # The tuple with the max frequency is decremented in successive_frequencies. This happens when one half of the merged bytes is in the max freq tuple.
             #  If the max freq tuple contains either half of the recently merged bytes, then it is possible that the max tuple frequency will decrease.
-        # The max frequency is smaller than either of the counts of new (a, merged) and (merged, b) pairs. Then, the max frequency may no longer be the max!
+        # This is impossible: The max frequency is smaller than either of the counts of new (a, merged) and (merged, b) pairs. Then, the max frequency may no longer be the max!
             #  If the max freq is smaller than the counts of either (a, mer) or (ged, b) pairs, then it is possible that the max freq must be replaced
-    # Updating pre_token_frequencies includes the following:
-        # Merging successive bytes in each pre_token
-        # Adding new (a, merged) and (merged, b) pairs to successive_frequencies
-        # Decrementing counts for (c, mer) and (ged, d) in successive_frequencies     
 
 def needs_update(next_successives_to_merge:tuple[bytes],
                  successives_to_merge_ls:tuple[bytes],
                  successive_frequencies:Dict[tuple[bytes], int],
                  starting_merge_idx: int
                  ) -> bool:
+    # TODO can use a set of the bytes about to be merged (that resets after each merge)
     for i in range(starting_merge_idx, len(successives_to_merge_ls)):
         successives_to_merge = successives_to_merge_ls[i]
-        
         if (successives_to_merge[0] in next_successives_to_merge) or (successives_to_merge[1] in next_successives_to_merge):
+            # If the next merge involves bytes in the merge queue 
             return True
         
-        next_successives_count = successive_frequencies[next_successives_to_merge]
-        for successive_bytes in successive_frequencies.keys():
-            if (successive_bytes[0] == next_successives_to_merge[1]) or (successive_bytes[1] == next_successives_to_merge[0]):
-                if (next_successives_count < successive_frequencies[successive_bytes]):
-                    return True
     return False
+
+# Updating pre_token_frequencies includes the following:
+    # Merging successive bytes in each pre_token
+    # Adding new (a, merged) and (merged, b) pairs to successive_frequencies
+    # Decrementing counts for (c, mer) and (ged, d) in successive_frequencies     
 
 def update_records(pre_token_frequencies: Dict[tuple[bytes], int],
                    successive_frequencies: Dict[tuple[bytes], int],
@@ -105,14 +102,16 @@ def update_records(pre_token_frequencies: Dict[tuple[bytes], int],
                    starting_merge_idx: int
                    ) -> Dict[tuple[bytes], int]:
     
+    successives_to_merge_bytes_ls = [b''.join(successives_to_merge) for successives_to_merge in successives_to_merge_ls]
+    
     # Iterate through pre_token_frequencies to find the pre_tokens that need (1) to be merged and (2) will impact updates to successive_frequencies
     pretokens_to_update_set: Dict[tuple[bytes], int] = {} # set of pre_tokens that need to be updated
     
     for pre_token_bytes_tuple in pre_token_frequencies.keys():
         pre_token_bytes = b''.join(pre_token_bytes_tuple)
         for i in range(starting_merge_idx, len(successives_to_merge_ls)):
-            successives_to_merge = successives_to_merge_ls[i]
-            if (b''.join(successives_to_merge) in pre_token_bytes):
+            successives_to_merge_bytes = successives_to_merge_bytes_ls[i]
+            if (successives_to_merge_bytes in pre_token_bytes):
                 pretokens_to_update_set[pre_token_bytes_tuple] = 0
 
     # create the updated pre_token_bytes_tuple and replace the old one in pre_token_frequencies
@@ -142,6 +141,10 @@ def update_records(pre_token_frequencies: Dict[tuple[bytes], int],
                 
                 id_to_pretoken_to_update[j] = new_pre_token_bytes_tuple # update to the most current merge version
 
+                # if (len(new_pre_token_bytes_tuple) == 0):
+                #     del pre_token_frequencies[pre_token_bytes_tuple] # remove entry entirely if it has been fully merged
+                #     return pre_token_frequencies, successive_frequencies
+                
                 if (pre_token_bytes_tuple != new_pre_token_bytes_tuple):
                     temp = pre_token_frequencies[pre_token_bytes_tuple]
                     pre_token_frequencies[new_pre_token_bytes_tuple] = temp
@@ -149,7 +152,6 @@ def update_records(pre_token_frequencies: Dict[tuple[bytes], int],
 
                 # add new entries to successive_frequencies for the pre-tokens that contain the successive bytes. I.e. for ABCD, if merging BC, add ABC and BCD entries
                 successive_frequencies = debug_count_successive_tokens(new_pre_token_bytes_tuple, pre_token_frequencies[new_pre_token_bytes_tuple], successive_frequencies, merged_bytes)
-
     return pre_token_frequencies, successive_frequencies
 
 # Redundant
@@ -268,7 +270,7 @@ def read_data(filename, special_tokens):
             pos = next_pos
 
 if __name__ == "__main__":
-    data_str = 'owt_train'
+    data_str = 'owt_valid'
     time1 = time.time()
     if (data_str == 'ts_valid'): # 22502601 bytes (.023 GB) # len of successive_frequencies: 932 # len of pre_token_frequencies: 13125
         input_path= "../data/TinyStoriesV2-GPT4-valid.txt" 
