@@ -166,19 +166,23 @@ class RotaryPositionalEmbedding(nn.Module):
         
         if (token_positions == None):
             token_positions = np.arange(x.size(1))
-        # breakpoint()
         block_vector = rearrange(self.precomputed_rotation_matrices, '(seq d_k) (rot1 rot2) -> seq d_k rot1 rot2', seq=self.max_seq_len, rot1=2)
         
         rotation_matrices = torch.stack([torch.block_diag(*block_vector[i]) for i in range(self.max_seq_len)])
         rotation_matrices = rotation_matrices[token_positions, :, :]
         # rotation_matrices has shape (max_seq_len, d_k, d_k)
 
-        # breakpoint()
-        # result = einsum(x, rotation_matrices, "... seq d_k1, seq d_k1 d_k2 -> ... seq d_k2")
         result = einsum(rotation_matrices, x, "seq d_k1 d_k2, ... seq d_k2 -> ... seq d_k1")
-        # breakpoint()
         return result
 
+def softmax(x: Float[Tensor, "..."],
+            dim: int,
+            ) -> Float[Tensor, "..."]:
+    x_max = torch.max(x, dim=dim, keepdim=True)
+    x = x - x_max.values
+    x_exp = torch.exp(x)
+    x_exp_sum = torch.sum(x_exp, dim=dim, keepdim=True)
+    return x_exp/x_exp_sum
 
         
         
