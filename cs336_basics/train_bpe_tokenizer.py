@@ -1,6 +1,6 @@
 import regex as re
 from typing import List, Dict
-from cs336_basics.train_bpe_tokenizer_faster import _train_bpe
+from cs336_basics.train_bpe_tokenizer_faster3 import _train_bpe
 from cs336_basics.helpers import pretokenize_and_count_frequencies
 
 def train_bpe(input_path: str,

@@ -151,12 +151,12 @@ class RotaryPositionalEmbedding(nn.Module):
         d_2 = self.d_k // 2
         precomputed_rotation_matrices = torch.zeros([d_2*self.max_seq_len, 4], device=device)
         for i in range(self.max_seq_len):
-            for k in range(0, d_2):
+            for k in range(1, d_2+1):
                 theta_k = i / (self.theta**(2*(k-1)/self.d_k))
-                precomputed_rotation_matrices[i*d_2+k, 0] = np.cos(theta_k)
-                precomputed_rotation_matrices[i*d_2+k, 1] = -np.sin(theta_k)
-                precomputed_rotation_matrices[i*d_2+k, 2] = np.sin(theta_k)
-                precomputed_rotation_matrices[i*d_2+k, 3] = np.cos(theta_k)
+                precomputed_rotation_matrices[i*d_2+k-1, 0] = np.cos(theta_k)
+                precomputed_rotation_matrices[i*d_2+k-1, 1] = -np.sin(theta_k)
+                precomputed_rotation_matrices[i*d_2+k-1, 2] = np.sin(theta_k)
+                precomputed_rotation_matrices[i*d_2+k-1, 3] = np.cos(theta_k)
         self.register_buffer('precomputed_rotation_matrices', precomputed_rotation_matrices, persistent=True)
 
     def forward(self,
@@ -170,11 +170,13 @@ class RotaryPositionalEmbedding(nn.Module):
         block_vector = rearrange(self.precomputed_rotation_matrices, '(seq d_k) (rot1 rot2) -> seq d_k rot1 rot2', seq=self.max_seq_len, rot1=2)
         
         rotation_matrices = torch.stack([torch.block_diag(*block_vector[i]) for i in range(self.max_seq_len)])
-        rotation_matrices = rotation_matrices[token_positions, :,:]
+        rotation_matrices = rotation_matrices[token_positions, :, :]
         # rotation_matrices has shape (max_seq_len, d_k, d_k)
+
         # breakpoint()
-        result = einsum(rotation_matrices, x, "seq d_k d_k, ... seq d_k -> ... seq d_k")
-        breakpoint()
+        # result = einsum(x, rotation_matrices, "... seq d_k1, seq d_k1 d_k2 -> ... seq d_k2")
+        result = einsum(rotation_matrices, x, "seq d_k1 d_k2, ... seq d_k2 -> ... seq d_k1")
+        # breakpoint()
         return result
 
 

@@ -106,7 +106,12 @@ def update_records(pre_token_frequencies: Dict[tuple[bytes], int],
     
     # Iterate through pre_token_frequencies to find the pre_tokens that need (1) to be merged and (2) will impact updates to successive_frequencies
     pretokens_to_update_set: Dict[tuple[bytes], int] = {} # set of pre_tokens that need to be updated
-    
+    ############ 
+    pretokens_to_update_by_merge: Dict[tuple[bytes], List[int]] = {} # list of pre_tokens IDs (values) that need to be updated by merge (keys)
+    # TODO Outside of this fn, store a mapping from pre_tokens IDs to the pre_tokens. This will be the global copy of the pre_tokens
+    # For now, let's call it:
+    id_to_pretoken: Dict[int, tuple[bytes]] = {}
+    ############ 
     for pre_token_bytes_tuple in pre_token_frequencies.keys():
         pre_token_bytes = b''.join(pre_token_bytes_tuple)
         for i in range(starting_merge_idx, len(successives_to_merge_ls)):
@@ -118,7 +123,7 @@ def update_records(pre_token_frequencies: Dict[tuple[bytes], int],
     # remove entries to successive_frequencies for the pre-tokens that contain the successive bytes. I.e. for ABCD, if merging BC, remove AB and CD counts
     # add new entries to successive_frequencies for the pre-tokens that contain the successive bytes. I.e. for ABCD, if merging BC, add ABC and BCD entries
 
-    # Replicate the loops in my original implementation, but this time, only iterate over the pre_tokens that need to be updated
+    # Only iterate over the pre_tokens that need to be updated
     # Update these pre_tokens for each outer loop (each merge)
     id_to_pretoken_to_update: Dict[int, tuple[bytes]] = {}
     temp_ls = list(pretokens_to_update_set.keys())
@@ -130,7 +135,7 @@ def update_records(pre_token_frequencies: Dict[tuple[bytes], int],
         merged_bytes = successives_to_merge[0] + successives_to_merge[1]
 
         num_pretokens_to_update = len(id_to_pretoken_to_update)
-        for j in range(num_pretokens_to_update):
+        for j in range(num_pretokens_to_update): # TODO only iterate through the pre_tokens that need to be updated for this merge!
             pre_token_bytes_tuple = id_to_pretoken_to_update[j]
             needs_merge = get_need_to_process(pre_token_bytes_tuple, successives_to_merge)
             if (needs_merge):
@@ -141,28 +146,13 @@ def update_records(pre_token_frequencies: Dict[tuple[bytes], int],
                 
                 id_to_pretoken_to_update[j] = new_pre_token_bytes_tuple # update to the most current merge version
 
-                # if (len(new_pre_token_bytes_tuple) == 0):
-                #     del pre_token_frequencies[pre_token_bytes_tuple] # remove entry entirely if it has been fully merged
-                #     return pre_token_frequencies, successive_frequencies
-                
-                if (pre_token_bytes_tuple != new_pre_token_bytes_tuple):
-                    temp = pre_token_frequencies[pre_token_bytes_tuple]
-                    pre_token_frequencies[new_pre_token_bytes_tuple] = temp
-                    del pre_token_frequencies[pre_token_bytes_tuple]
+                temp = pre_token_frequencies[pre_token_bytes_tuple]
+                pre_token_frequencies[new_pre_token_bytes_tuple] = temp
+                del pre_token_frequencies[pre_token_bytes_tuple]
 
                 # add new entries to successive_frequencies for the pre-tokens that contain the successive bytes. I.e. for ABCD, if merging BC, add ABC and BCD entries
                 successive_frequencies = debug_count_successive_tokens(new_pre_token_bytes_tuple, pre_token_frequencies[new_pre_token_bytes_tuple], successive_frequencies, merged_bytes)
     return pre_token_frequencies, successive_frequencies
-
-# Redundant
-# def apply_merges(pre_token_bytes_tuple, merge_ls):
-#     for successives_to_merge in merge_ls:
-#         i = 0
-#         while i < len(pre_token_bytes_tuple) - 1:
-#             if pre_token_bytes_tuple[i:i+2] == successives_to_merge:
-#                 pre_token_bytes_tuple = pre_token_bytes_tuple[:i]+(pre_token_bytes_tuple[i]+pre_token_bytes_tuple[i+1],)+pre_token_bytes_tuple[i+2:]
-#             i += 1
-#     return pre_token_bytes_tuple
 
 
 def get_need_to_process(pre_token_bytes_tuple: tuple[bytes],
@@ -270,7 +260,7 @@ def read_data(filename, special_tokens):
             pos = next_pos
 
 if __name__ == "__main__":
-    data_str = 'owt_valid'
+    data_str = 'ts_valid'
     time1 = time.time()
     if (data_str == 'ts_valid'): # 22502601 bytes (.023 GB) # len of successive_frequencies: 932 # len of pre_token_frequencies: 13125
         input_path= "../data/TinyStoriesV2-GPT4-valid.txt" 
