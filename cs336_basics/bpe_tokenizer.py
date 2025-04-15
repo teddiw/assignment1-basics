@@ -1,14 +1,24 @@
 import regex as re
+import multiprocessing as mp 
+from tqdm import tqdm
 from typing import List, Dict, Iterable, Iterator, Tuple
 import pickle 
+import numpy as np
 
 PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 
 class BPE_Tokenizer:
-    def __init__(self, vocab: Dict[int, bytes], merges: List[tuple[bytes]], special_tokens: list[str] | None = None):
+    def __init__(self, 
+                 vocab: Dict[int, bytes], 
+                 merges: List[tuple[bytes]], 
+                 special_tokens: list[str] | None = None,
+                 vocab_filename: str = None,
+                 merges_filename: str = None):
         self.vocab = vocab
         self.merges = merges
         self.special_tokens = special_tokens if special_tokens else []
+        self.vocab_filename = vocab_filename
+        self.merges_filename = merges_filename
         self.vocab_to_id = {}
         for key, value in vocab.items():
             self.vocab_to_id[value] = key
@@ -32,23 +42,10 @@ class BPE_Tokenizer:
     def decode(self, ids: list[int]) -> str:
         decoded_text = b''
         for token_id in ids:
+            if token_id not in self.vocab.keys():
+                breakpoint()
             decoded_text += self.vocab[token_id]
         return bytes(decoded_text).decode("utf-8")
-    
-    # TODO fix split_on_ST in helpers
-    # def _split_keep_delimiters(self, text):
-    #     # TODO order special tokens by length (longest to shortest)
-    #     # TODO split on the special tokens and keep the delimiters
-    #     # TODO append the results together into one list 
-    #     texts = [text]
-    #     ordered_special_tokens = sorted(self.special_tokens, key=len, reverse=True)
-    #     for special_token in ordered_special_tokens:
-    #         pattern = '|'.join(map(re.escape, [special_token]))
-    #         new_texts = []
-    #         for text in texts:
-    #             new_texts.extend([x for x in re.split(f'({pattern})', text) if x != '']) 
-    #         texts = new_texts
-    #     return texts
     
     def _split_keep_delimiters(self, text):
         # order special tokens by length (longest to shortest)
@@ -125,11 +122,173 @@ class BPE_Tokenizer:
                 token_ids.append(token_id)
                 tokenized_text.append(token_byte)
         return tokenized_text, token_ids
+    
+    ########### belongs in the class ###########
+    def parallel_encode(self, filename: str) -> List[int]:
+        assert self.vocab_filename
+        assert self.merges_filename
+        data_iterator = read_data(filename, self.vocab_filename, self.merges_filename, self.special_tokens)
 
+        all_token_ids = []
+        def accumulate_token_ids(result: List[int]) -> List[int]: 
+            # This is called whenever the pool returns a result.
+            # all_token_ids is modified only by the main process, not the pool workers.
+            all_token_ids.extend(result)
+            return all_token_ids
+
+        with mp.Pool(processes=8)  as pool:
+            for document in tqdm(data_iterator): # send over the file and the byte indices in larger chunks. The use seek to get the text.
+                pool.apply_async(_parallelizable_encode, args=document, callback=accumulate_token_ids)
+            pool.close()
+            pool.join()
+
+        # with mp.Pool(processes=8)  as pool:
+        #     tasks = [pool.apply_async(_parallelizable_encode, args=document) for document in data_iterator]
+        
+        #     for i, task in enumerate(tasks):
+        #         try:
+        #             result = task.get()
+        #             print(f"Task {i} result: {result}")
+        #         except Exception as e:
+        #             print(f"Task {i} failed with exception: {e}")
+
+        return all_token_ids
+            
+    ############################################
+########################################
 def read_data_for_tokenization(file):
     # with open(filename) as file: # must be called outside the function
     for line in file:
         yield line
+
+def read_data(file_name, vocab_filename, merges_filename, special_tokens):
+    num_lines_per_chunk = 4 # 4096 # this is arbitrary # TODO revert
+    document_chunk = ""
+    with open(file_name, 'r') as file:
+        pos = file.tell()
+        file.seek(0, 2)  # Seek to end of file
+        file_size = file.tell() 
+        file.seek(pos)
+        while pos < file_size:
+            i = 0
+            while (i < num_lines_per_chunk) or ((i >= num_lines_per_chunk) and ('<|endoftext|>' not in document_chunk)): # ensures that <|endoftext|> is in the chunk
+                line = file.readline()
+                if (line == ''):  # if eof is reached
+                    if (len(document_chunk) > 0):
+                        yield (file_name, pos, len(document_chunk.encode('utf-8')), vocab_filename, merges_filename, special_tokens)
+                    break
+                else: 
+                    document_chunk += line
+                i += 1
+            if (line == ''):
+                break
+            document_chunk_splits = document_chunk.split('<|endoftext|>')
+            curr_document_chunk = '<|endoftext|>'.join(document_chunk_splits[:-1])+'<|endoftext|>'
+            document_chunk = document_chunk_splits[-1] # start of the next document_chunk
+            next_pos = file.tell() - len(document_chunk.encode('utf-8')) 
+            size = len(curr_document_chunk.encode('utf-8'))
+            yield (file_name, pos, size, vocab_filename, merges_filename, special_tokens)
+            pos = next_pos
+
+def get_text_from_file(file, pos, size):
+    file.seek(pos)
+    text = file.read(size)
+    return text
+###########################################
+
+def _parallelizable_split_keep_delimiters(text, special_tokens):
+        # order special tokens by length (longest to shortest)
+        # split on the special tokens and keep the delimiters
+        # append the results together into one list 
+        texts = [text]
+        ordered_special_tokens = sorted(special_tokens, key=len, reverse=True)
+        for special_token in ordered_special_tokens:
+            i = len(texts) - 1
+            while i >= 0:
+                curr_text = texts[i]
+                new_texts = []
+                if (curr_text not in ordered_special_tokens):
+                    if (special_token in curr_text):
+                        split_text = curr_text.split(special_token)
+                        split_text_with_delimiter = []
+                        for j in range(len(split_text)-1):
+                            split_text_with_delimiter.append(split_text[j])
+                            split_text_with_delimiter.append(special_token)
+                        split_text_with_delimiter.append(split_text[-1])
+                        new_texts.extend(split_text_with_delimiter) 
+                    else: 
+                        new_texts.append(curr_text)
+                else:
+                    new_texts.append(curr_text)
+
+                texts = texts[:i] + new_texts + texts[i+1:]
+                i -= 1
+
+        # return [x for x in texts if x != '']
+        for x in texts:
+            if x != '':
+                yield x
+
+def _parallelizable_merge_in_pretoken_tuple(merge: List[bytes], pretoken_tuple: Tuple[bytes]):
+        """Merges the two bytes in the pretoken tuple if they are adjacent."""
+        i = 0
+        while i < len(pretoken_tuple) - 1:
+            pretoken_merge_candidate = pretoken_tuple[i:i+2]
+            if (pretoken_merge_candidate[0] == merge[0]) and (pretoken_merge_candidate[1] == merge[1]):
+                pretoken_tuple = pretoken_tuple[:i] + (pretoken_tuple[i] + pretoken_tuple[i+1],) + pretoken_tuple[i+2:]
+            i += 1
+        return pretoken_tuple
+
+def _parallelizable_encode_nonspecial_text(text, merges, vocab_to_id):
+        """Encodes the text using the merges and vocab_to_id. The text does not contain special tokens."""
+        pretokens = re.findall(PAT, text) 
+        tokenized_text = []
+        token_ids = []
+        for pretoken in pretokens:
+            pretoken = pretoken.encode("utf-8")
+            pretoken_tuple = tuple(bytes([byte]) for byte in pretoken)
+            i = 0
+            while (i < len(merges) and len(pretoken_tuple) > 1):
+                merge = merges[i]
+                pretoken_tuple = _parallelizable_merge_in_pretoken_tuple(merge, pretoken_tuple)
+                i += 1
+            for token_byte in pretoken_tuple:
+                token_id = vocab_to_id[token_byte]
+                token_ids.append(token_id)
+                tokenized_text.append(token_byte)
+        return tokenized_text, token_ids
+
+def _parallelizable_encode(data_filename, pos, size, vocab_filename, merges_filename, special_tokens): 
+    """Encodes the text using the merges and vocab_to_id. The text may contain special tokens."""
+    with open(vocab_filename, 'rb') as handle:
+        vocab = pickle.load(handle)
+    with open(merges_filename, 'rb') as handle:
+        merges = pickle.load(handle)
+
+    vocab_to_id = {}
+    for key, value in vocab.items():
+        vocab_to_id[value] = key
+    
+    with open(data_filename, 'r') as file:
+        file.seek(pos)
+        text = file.read(size)
+    
+    # an iterator over an ordered list of the strings and special tokens in x
+    chunk_iterator = _parallelizable_split_keep_delimiters(text, special_tokens)
+
+    all_tokenized_text = []
+    all_token_ids = []
+    for text_fragment in chunk_iterator:
+        if (text_fragment in special_tokens):
+            all_tokenized_text.append(text_fragment)
+            all_token_ids.append(vocab_to_id[text_fragment.encode("utf-8")])
+        else:
+            tokenized_text, token_ids = _parallelizable_encode_nonspecial_text(text_fragment, merges, vocab_to_id)
+            all_tokenized_text.extend(tokenized_text)
+            all_token_ids.extend(token_ids)
+    return all_token_ids
+
+
 
 # if __name__ == "__main__":
     

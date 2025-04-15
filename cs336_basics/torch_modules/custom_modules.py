@@ -253,8 +253,6 @@ class MultiheadSelfAttention(nn.Module):
         else:
             self.rope = RotaryPositionalEmbedding(theta, self.d_k, max_seq_len)
 
-        
-
     def forward(self,
                 x: Float[Tensor, " ... batch seq d_model"],
                 ) -> Float[Tensor, " ... batch seq d_model"]: # d_model = d_k * num_heads
