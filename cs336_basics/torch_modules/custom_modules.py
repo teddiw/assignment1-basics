@@ -169,10 +169,10 @@ class RotaryPositionalEmbedding(nn.Module):
         block_vector = rearrange(self.precomputed_rotation_matrices, '(seq d_k) (rot1 rot2) -> seq d_k rot1 rot2', seq=self.max_seq_len, rot1=2)
         
         rotation_matrices = torch.stack([torch.block_diag(*block_vector[i]) for i in range(self.max_seq_len)])
+        
         rotation_matrices = rotation_matrices[token_positions, :, :]
         # rotation_matrices has shape (max_seq_len, d_k, d_k)
-
-        result = einsum(rotation_matrices, x, "seq d_k1 d_k2, ... seq d_k2 -> ... seq d_k1")
+        result = einsum(rotation_matrices, x, "... seq d_k1 d_k2, ... seq d_k2 -> ... seq d_k1")
         return result
 
 def softmax(x: Float[Tensor, "..."],
@@ -200,6 +200,85 @@ def scaled_dot_product_attention(Q: Float[Tensor, "... n_queries d_k"],
     output = einsum(temp2, V, "... n_queries m_keys, ... m_keys d_v -> ... n_queries d_v")
     return output
 
-# TODO move the inputs to the device
-# TODO make everything the specified dtype?
+class MultiheadSelfAttention(nn.Module):
+    def __init__(self,
+                 d_model: int,
+                 num_heads: int,
+                 max_seq_len: int | None = None,
+                 theta: float | None = None,
+                 token_positions: Int[LongTensor, "... seq"] | None = None,
+                 device: torch.device | None = None,
+                 dtype: torch.dtype | None = None,
+                 q_proj_weight: Float[Tensor, " d_k d_in"] | None = None, # for testing purposes
+                 k_proj_weight: Float[Tensor, " d_k d_in"] | None = None, # for testing purposes
+                 v_proj_weight: Float[Tensor, " d_v d_in"] | None = None, # for testing purposes
+                 o_proj_weight: Float[Tensor, " d_model d_v"] | None = None, # for testing purposes
+                 ):
+        super(MultiheadSelfAttention, self).__init__()
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.device = device
+        self.dtype = dtype
+        self.max_seq_len = max_seq_len
+        self.theta = theta
+        self.token_positions = token_positions
+        assert d_model % num_heads == 0
+        self.d_k = d_model // num_heads
 
+        if (q_proj_weight != None):
+            # assume k_proj_weight, v_proj_weight, and o_proj_weight are also provided
+            self.W_q = nn.Parameter(q_proj_weight, requires_grad=True)
+            self.W_k = nn.Parameter(k_proj_weight, requires_grad=True)
+            self.W_v = nn.Parameter(v_proj_weight, requires_grad=True)
+            self.W_o = nn.Parameter(o_proj_weight, requires_grad=True)
+        else:
+            # initialize weights. These are all square matrices of size d_model.
+            weights_q = torch.zeros([self.d_k*num_heads, d_model], device=device, dtype=dtype)
+            weights_k = torch.zeros([self.d_k*num_heads, d_model], device=device, dtype=dtype)
+            weights_v = torch.zeros([self.d_k*num_heads, d_model], device=device, dtype=dtype)
+            weights_o = torch.zeros([d_model, self.d_k*num_heads], device=device, dtype=dtype)
+            sigma = np.sqrt(2/(self.d_k*num_heads, d_model))
+            initialized_wq = torch.nn.init.trunc_normal_(weights_q, mean=0, std=sigma, a=-3*sigma, b=3*sigma)
+            initialized_wk = torch.nn.init.trunc_normal_(weights_k, mean=0, std=sigma, a=-3*sigma, b=3*sigma)
+            initialized_wv = torch.nn.init.trunc_normal_(weights_v, mean=0, std=sigma, a=-3*sigma, b=3*sigma)
+            initialized_wo = torch.nn.init.trunc_normal_(weights_o, mean=0, std=sigma, a=-3*sigma, b=3*sigma)
+
+            self.W_q = nn.Parameter(initialized_wq, requires_grad=True)
+            self.W_k = nn.Parameter(initialized_wk, requires_grad=True)
+            self.W_v = nn.Parameter(initialized_wv, requires_grad=True)
+            self.W_o = nn.Parameter(initialized_wo, requires_grad=True)
+
+        if (theta == None):
+            self.rope = None
+        else:
+            self.rope = RotaryPositionalEmbedding(theta, self.d_k, max_seq_len)
+
+        
+
+    def forward(self,
+                x: Float[Tensor, " ... batch seq d_model"],
+                ) -> Float[Tensor, " ... batch seq d_model"]: # d_model = d_k * num_heads
+        # get Q, K, V
+        Q = einsum(x, self.W_q, "... batch seq d_model, h_d_k d_model -> ... batch seq h_d_k")
+        K = einsum(x, self.W_k, "... batch seq d_model, h_d_k d_model -> ... batch seq h_d_k")
+        V = einsum(x, self.W_v, "... batch seq d_model, h_d_k d_model -> ... batch seq h_d_k")
+
+        # Rearrange Q, K, V to have the head dimension as a batch dimension
+        Q = rearrange(Q, "... batch seq (h d_k) -> ... batch h seq d_k", h = self.num_heads)
+        K = rearrange(K, "... batch seq (h d_k) -> ... batch h seq d_k", h = self.num_heads)
+        V = rearrange(V, "... batch seq (h d_v) -> ... batch h seq d_v", h = self.num_heads)
+
+        # RoPE 
+        if (self.rope):
+            Q = self.rope.forward(Q, self.token_positions)
+            K = self.rope.forward(K, self.token_positions)
+        
+        seq = x.shape[-2]
+        causal_attn_mask = torch.tril(torch.ones([seq, seq], device=self.device, dtype=self.dtype))
+        result = scaled_dot_product_attention(Q, K, V, mask=causal_attn_mask)
+
+        result = rearrange(result, "... batch h seq d_v -> ... batch seq (h d_v)")
+        # result = einsum(self.W_o, result, "d_model h_d_k, ... batch seq d_model -> ... batch seq d_model")
+        result = einsum(result, self.W_o, "... batch seq h_d_k, d_model h_d_k-> ... batch seq d_model")
+
+        return result

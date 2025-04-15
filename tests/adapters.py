@@ -12,7 +12,7 @@ from torch import Tensor
 # teddi implementation imports
 from cs336_basics.train_bpe_tokenizer import train_bpe
 from cs336_basics.bpe_tokenizer import BPE_Tokenizer
-from cs336_basics.torch_modules.custom_modules import Linear, Embedding, RMSNorm, PositionwiseFeedforward, RotaryPositionalEmbedding, softmax, scaled_dot_product_attention
+from cs336_basics.torch_modules.custom_modules import Linear, Embedding, RMSNorm, PositionwiseFeedforward, RotaryPositionalEmbedding, softmax, scaled_dot_product_attention, MultiheadSelfAttention
 
 def run_linear(
     d_in: int,
@@ -142,7 +142,7 @@ def run_multihead_self_attention(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
+    return MultiheadSelfAttention(d_model, num_heads, q_proj_weight=q_proj_weight, k_proj_weight=k_proj_weight, v_proj_weight=v_proj_weight, o_proj_weight=o_proj_weight).forward(in_features)
 
 
 def run_multihead_self_attention_with_rope(
@@ -182,7 +182,7 @@ def run_multihead_self_attention_with_rope(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
+    return MultiheadSelfAttention(d_model, num_heads, max_seq_len=max_seq_len, theta=theta, token_positions=token_positions, q_proj_weight=q_proj_weight, k_proj_weight=k_proj_weight, v_proj_weight=v_proj_weight, o_proj_weight=o_proj_weight).forward(in_features)
 
 
 def run_rope(
