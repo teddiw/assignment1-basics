@@ -4,6 +4,8 @@ from tqdm import tqdm
 from typing import List, Dict, Iterable, Iterator, Tuple
 import pickle 
 import numpy as np
+import cProfile
+import json
 
 PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 
@@ -121,7 +123,6 @@ class BPE_Tokenizer:
                 tokenized_text.append(token_byte)
         return tokenized_text, token_ids
     
-    ########### belongs in the class ###########
     def parallel_encode(self, filename: str) -> List[int]:
         assert self.vocab_filename
         assert self.merges_filename
@@ -133,36 +134,50 @@ class BPE_Tokenizer:
             # all_token_ids is modified only by the main process, not the pool workers.
             all_token_ids.extend(result)
             return all_token_ids
-        
-        global vocab
-        vocab = self.vocab
-        global merges
-        merges = self.merges
-        global vocab_to_id
-        vocab_to_id = {}
-        for key, value in vocab.items():
-            vocab_to_id[value] = key
-        global previously_encoded_pretokens
-        previously_encoded_pretokens = {}
-        for document in data_iterator:
-            result = _parallelizable_encode(*document)
-            all_token_ids.extend(result)
+        # ############# local run
+        # global vocab
+        # vocab = self.vocab
+        # global merges
+        # merges = self.merges
+        # global vocab_to_id
+        # vocab_to_id = {}
+        # for key, value in vocab.items():
+        #     vocab_to_id[value] = key
+        # global previously_encoded_pretokens
+        # previously_encoded_pretokens = {}
 
+        # profiler = cProfile.Profile()
+        # profiler.enable()
+        # for document in data_iterator:
+        #     result = _parallelizable_encode(*document)
+        #     all_token_ids.extend(result)
+        # profiler.disable()
+        # profiler.print_stats(sort='cumtime') 
+        # ############# end local run
+
+        # ############# start parallel 1
         # with mp.Pool(initializer=init_worker, initargs=(self.vocab_filename, self.merges_filename), processes=8)  as pool:
         #     for document in tqdm(data_iterator): # send over the file and the byte indices in larger chunks. The use seek to get the text.
         #         pool.apply_async(_parallelizable_encode, args=document, callback=accumulate_token_ids)
         #     pool.close()
         #     pool.join()
+        # ############# end parallel 1    
 
-        # with mp.Pool(processes=8)  as pool:
-        #     tasks = [pool.apply_async(_parallelizable_encode, args=document) for document in data_iterator]
+        with mp.Pool(initializer=init_worker, initargs=(self.vocab_filename, self.merges_filename), processes=8)  as pool:
+            tasks = [pool.apply_async(_parallelizable_encode, args=document) for document in data_iterator]
+            pool.close()
+            pool.join()
         
-        #     for i, task in enumerate(tasks):
-        #         try:
-        #             result = task.get()
-        #             print(f"Task {i} result: {result}")
-        #         except Exception as e:
-        #             print(f"Task {i} failed with exception: {e}")
+        all_token_ids = []
+        for task in tasks:
+            all_token_ids.extend(task.get())
+
+        # for i, task in enumerate(tasks):
+        #     try:
+        #         result = task.get()
+        #         print(f"Task {i} result: {result}")
+        #     except Exception as e:
+        #         print(f"Task {i} failed with exception: {e}")
 
         return all_token_ids
             
@@ -174,16 +189,19 @@ merges = None
 vocab_to_id = None
 
 def init_worker(vocab_filename, merges_filename):
-
     global vocab
-    with open(vocab_filename, 'rb') as handle:
+    with open(vocab_filename, 'rb') as handle: 
         vocab = pickle.load(handle)
+    # with open(vocab_filename, "r") as f: # for running tests
+    #     vocab = json.load(f)
 
     global merges
-    with open(merges_filename, 'rb') as handle:
+    with open(merges_filename, 'rb') as handle: 
         merges = pickle.load(handle)
+    # with open(merges_filename, "r") as f: # for running tests
+    #     merges = f.read()
 
-    global vocab_to_id
+    global vocab_to_id 
     vocab_to_id = {}
     for key, value in vocab.items():
         vocab_to_id[value] = key
@@ -197,25 +215,27 @@ def read_data_for_tokenization(file):
         yield line
 
 def read_data(file_name, vocab_filename, merges_filename, special_tokens):
-    num_lines_per_chunk = 4096 # this is arbitrary # TODO revert
+    num_lines_per_chunk = 4096 # this is arbitrary 
     document_chunk = ""
-    with open(file_name, 'r') as file:
+    with open(file_name, 'rb') as file:
         pos = file.tell()
         file.seek(0, 2)  # Seek to end of file
         file_size = file.tell() 
         file.seek(pos)
+        finished = False
         while pos < file_size:
             i = 0
-            while (i < num_lines_per_chunk) or ((i >= num_lines_per_chunk) and ('<|endoftext|>' not in document_chunk)): # ensures that <|endoftext|> is in the chunk
+            while ((i < num_lines_per_chunk) or ((i >= num_lines_per_chunk) and ('<|endoftext|>' not in document_chunk))): # ensures that <|endoftext|> is in the chunk 
                 line = file.readline()
-                if (line == ''):  # if eof is reached
+                if (line == b''):  # if eof is reached
                     if (len(document_chunk) > 0):
+                        finished = True
                         yield (file_name, pos, len(document_chunk.encode('utf-8')), vocab_filename, merges_filename, special_tokens)
-                    break
+                    return
                 else: 
-                    document_chunk += line
+                    document_chunk += line.decode('utf-8')
                 i += 1
-            if (line == ''):
+            if (finished):
                 break
             document_chunk_splits = document_chunk.split('<|endoftext|>')
             curr_document_chunk = '<|endoftext|>'.join(document_chunk_splits[:-1])+'<|endoftext|>'
@@ -276,6 +296,7 @@ def _parallelizable_merge_in_pretoken_tuple(merge: List[bytes], pretoken_tuple: 
 
 def _parallelizable_encode_nonspecial_text(text, merges, vocab_to_id):
         """Encodes the text using the merges and vocab_to_id. The text does not contain special tokens."""
+        # TODO split with re.findall(PAT, text) when splitting on pretokens
         pretokens = re.findall(PAT, text) 
         token_ids = []
         for pretoken in pretokens:
@@ -286,13 +307,18 @@ def _parallelizable_encode_nonspecial_text(text, merges, vocab_to_id):
                     pretoken = pretoken.encode("utf-8")
                     pretoken_tuple = tuple(bytes([byte]) for byte in pretoken)
                     i = 0
+                    
                     while (i < len(merges) and len(pretoken_tuple) > 1):
                         merge = merges[i]
-                        pretoken_tuple = _parallelizable_merge_in_pretoken_tuple(merge, pretoken_tuple)
+                        if (merge[0] in pretoken_tuple) and (merge[1] in pretoken_tuple):
+                            pretoken_tuple = _parallelizable_merge_in_pretoken_tuple(merge, pretoken_tuple)
                         i += 1
                     curr_token_ids = []
+                    
                     for token_byte in pretoken_tuple:
-                        token_id = vocab_to_id[token_byte]
+                        token_id = vocab_to_id[token_byte] # TODO THIS line is causing trouble! For the command below. 
+                        # (You'll have to revert to the "for running tests" vocab + merge loads)
+                        # `uv run pytest -k test_parallel_encode_iterable_tinystories_sample_roundtrip`
                         curr_token_ids.append(token_id)
                     previously_encoded_pretokens[pretoken] = curr_token_ids
             token_ids.extend(curr_token_ids)
@@ -309,10 +335,10 @@ def _parallelizable_encode(data_filename, pos, size, vocab_filename, merges_file
     # for key, value in vocab.items():
     #     vocab_to_id[value] = key
     
-    with open(data_filename, 'r') as file:
+    with open(data_filename, 'rb') as file:
         file.seek(pos)
-        text = file.read(size)
-    
+        text = file.read(size).decode('utf-8')
+
     # an iterator over an ordered list of the strings and special tokens in x
     chunk_iterator = _parallelizable_split_keep_delimiters(text, special_tokens)
 
@@ -323,6 +349,7 @@ def _parallelizable_encode(data_filename, pos, size, vocab_filename, merges_file
         else:
             token_ids = _parallelizable_encode_nonspecial_text(text_fragment, merges, vocab_to_id)
             all_token_ids.extend(token_ids)
+
     return all_token_ids
 
 
