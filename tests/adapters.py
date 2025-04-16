@@ -12,7 +12,7 @@ from torch import Tensor
 # teddi implementation imports
 from cs336_basics.train_bpe_tokenizer import train_bpe
 from cs336_basics.bpe_tokenizer import BPE_Tokenizer
-from cs336_basics.torch_modules.custom_modules import Linear, Embedding, RMSNorm, PositionwiseFeedforward, RotaryPositionalEmbedding, softmax, scaled_dot_product_attention, MultiheadSelfAttention
+from cs336_basics.torch_modules.custom_modules import Linear, Embedding, RMSNorm, PositionwiseFeedforward, RotaryPositionalEmbedding, softmax, scaled_dot_product_attention, MultiheadSelfAttention, TransformerBlock, TransformerLM
 
 def run_linear(
     d_in: int,
@@ -277,7 +277,9 @@ def run_transformer_block(
         Float[Tensor, "batch sequence_length d_model"] Tensor with the output of
         running the Transformer block on the input features while using RoPE.
     """
-    raise NotImplementedError
+    
+    result =  TransformerBlock(d_model, num_heads, d_ff, max_seq_len=max_seq_len, theta=theta, weights=weights).forward(in_features)
+    return result
 
 
 def run_transformer_lm(
@@ -359,7 +361,7 @@ def run_transformer_lm(
         Float[Tensor, "batch_size sequence_length vocab_size"]: Tensor with the predicted unnormalized
         next-word distribution for each token.
     """
-    raise NotImplementedError
+    return TransformerLM(d_model, num_heads, d_ff, context_length=context_length, theta=rope_theta, vocab_size=vocab_size, num_layers=num_layers, weights=weights).forward(in_indices)
 
 
 def run_rmsnorm(

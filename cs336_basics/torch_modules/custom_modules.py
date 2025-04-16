@@ -101,7 +101,10 @@ class PositionwiseFeedforward(nn.Module):
                 ): 
         super(PositionwiseFeedforward, self).__init__()
         self.d_model = d_model
-        self.d_ff = int(((d_model * 8/3) // 64) * 64) # multiple of 64
+        if (d_ff):
+            self.d_ff = d_ff
+        else:
+            self.d_ff = int(((d_model * 8/3) // 64) * 64) # multiple of 64
         self.device = device
         self.dtype = dtype
 
@@ -110,7 +113,6 @@ class PositionwiseFeedforward(nn.Module):
             self.w1 = nn.Parameter(w1_weight, requires_grad=True)
             self.w2 = nn.Parameter(w2_weight, requires_grad=True)   
             self.w3 = nn.Parameter(w3_weight, requires_grad=True)
-            self.d_ff = d_ff
         else:
             # initialize weights
             weights1 = torch.zeros([self.d_ff, d_model], device=device, dtype=dtype)
@@ -161,18 +163,18 @@ class RotaryPositionalEmbedding(nn.Module):
 
     def forward(self,
                 x: Float[Tensor, "... seq d_k"],
-                token_positions: Int[LongTensor, "... seq"],
+                token_positions: Int[LongTensor, "... seq"]=None,
                 ) -> Float[Tensor, "... seq d_k"]:
         
         if (token_positions == None):
-            token_positions = np.arange(x.size(1))
+            token_positions = np.arange(x.size(-2))
         block_vector = rearrange(self.precomputed_rotation_matrices, '(seq d_k) (rot1 rot2) -> seq d_k rot1 rot2', seq=self.max_seq_len, rot1=2)
         
         rotation_matrices = torch.stack([torch.block_diag(*block_vector[i]) for i in range(self.max_seq_len)])
         
-        rotation_matrices = rotation_matrices[token_positions, :, :]
+        rotation_matrices_sliced = rotation_matrices[token_positions, :, :]
         # rotation_matrices has shape (max_seq_len, d_k, d_k)
-        result = einsum(rotation_matrices, x, "... seq d_k1 d_k2, ... seq d_k2 -> ... seq d_k1")
+        result = einsum(rotation_matrices_sliced, x, "... seq d_k1 d_k2, ... seq d_k2 -> ... seq d_k1")
         return result
 
 def softmax(x: Float[Tensor, "..."],
@@ -280,3 +282,120 @@ class MultiheadSelfAttention(nn.Module):
         result = einsum(result, self.W_o, "... batch seq h_d_k, d_model h_d_k-> ... batch seq d_model")
 
         return result
+
+class TransformerBlock(nn.Module):
+    def __init__(self,
+                 d_model: int,
+                 num_heads: int,
+                 d_ff: int,
+                 max_seq_len: int,
+                 theta: float,
+                 eps: float = 1e-5,
+                 token_positions: Int[LongTensor, "... seq"] | None = None,
+                 device: torch.device | None = None,
+                 dtype: torch.dtype | None = None,
+                 weights: dict[str, Tensor] | None = None, # for testing purposes
+                 ):
+        super(TransformerBlock, self).__init__()
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.d_ff = d_ff
+        self.device = device
+        self.dtype = dtype
+
+        if (weights): # if testing
+            # unpack the weights from the dictionary
+            rms_norm1_weights =  weights['ln1.weight']
+            k_proj_weight = weights['attn.k_proj.weight']
+            q_proj_weight = weights['attn.q_proj.weight']
+            v_proj_weight = weights['attn.v_proj.weight']
+            o_proj_weight = weights['attn.output_proj.weight']
+            rms_norm2_weights = weights['ln2.weight']
+            ffn_w1_weight =  weights['ffn.w1.weight']
+            ffn_w2_weight =  weights['ffn.w2.weight']
+            ffn_w3_weight =  weights['ffn.w3.weight']
+        else:
+            # set the weights to None
+            rms_norm1_weights = None
+            k_proj_weight = None
+            q_proj_weight = None
+            v_proj_weight = None
+            o_proj_weight = None
+            rms_norm2_weights = None
+            ffn_w1_weight =  None
+            ffn_w2_weight =  None
+            ffn_w3_weight =  None
+
+        self.rms_norm1 = RMSNorm(d_model, eps=eps, device=device, dtype=dtype, weights=rms_norm1_weights)
+        self.multihead_attn = MultiheadSelfAttention(d_model, num_heads, max_seq_len, theta, token_positions=token_positions, device=device, dtype=dtype, k_proj_weight=k_proj_weight, q_proj_weight=q_proj_weight, v_proj_weight=v_proj_weight, o_proj_weight=o_proj_weight)
+        self.rms_norm2 = RMSNorm(d_model, eps=eps, device=device, dtype=dtype, weights=rms_norm2_weights)
+        self.ffn = PositionwiseFeedforward(d_model, device=device, dtype=dtype, w1_weight=ffn_w1_weight, w2_weight=ffn_w2_weight, w3_weight=ffn_w3_weight)
+
+    def forward(self, 
+                x: Float[Tensor, " ... batch seq d_model"],
+                ) -> Float[Tensor, " ... batch seq d_model"]:
+        step1 = self.rms_norm1.forward(x)
+        step2 = self.multihead_attn.forward(step1)
+        step3 = x + step2
+        step4 = self.rms_norm2.forward(step3)
+        step5 = self.ffn.forward(step4)
+        return step5 + step3
+    
+class TransformerLM(nn.Module):
+    def __init__(self,
+                 d_model: int,
+                 num_heads: int,
+                 d_ff: int,
+                 context_length: int,
+                 theta: float,
+                 vocab_size: int,
+                 num_layers: int,
+                 eps: float = 1e-5,
+                 token_positions: Int[LongTensor, "... seq"] | None = None,
+                 device: torch.device | None = None,
+                 dtype: torch.dtype | None = None,
+                 weights: dict[str, Tensor] | None = None, # for testing purposes
+                 ):
+        super(TransformerLM, self).__init__()
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.d_ff = d_ff
+        self.device = device
+        self.dtype = dtype
+
+        if (weights): # if testing
+            embedding_weights =  weights['token_embeddings.weight']
+            transformer_weights = []
+            for i in range(num_layers):
+                curr_weights = {}
+                curr_weights[f'attn.q_proj.weight'] = weights[f'layers.{i}.attn.q_proj.weight']
+                curr_weights[f'attn.k_proj.weight'] = weights[f'layers.{i}.attn.k_proj.weight']
+                curr_weights[f'attn.v_proj.weight'] = weights[f'layers.{i}.attn.v_proj.weight']
+                curr_weights[f'attn.output_proj.weight'] = weights[f'layers.{i}.attn.output_proj.weight']
+                curr_weights[f'ln1.weight'] = weights[f'layers.{i}.ln1.weight']
+                curr_weights[f'ln2.weight'] = weights[f'layers.{i}.ln2.weight']
+                curr_weights[f'ffn.w1.weight'] = weights[f'layers.{i}.ffn.w1.weight']
+                curr_weights[f'ffn.w2.weight'] = weights[f'layers.{i}.ffn.w2.weight']
+                curr_weights[f'ffn.w3.weight'] = weights[f'layers.{i}.ffn.w3.weight']
+                transformer_weights.append(curr_weights)
+
+            final_linear_weights = weights['ln_final.weight']
+            head_weights = weights['lm_head.weight']
+
+
+        self.embedding = Embedding(num_embeddings=vocab_size, embedding_dim=context_length, device=device, dtype=dtype, weights=embedding_weights)
+        self.transformer_blocks = []
+        for i in range(num_layers):
+            self.transformer_blocks.append(TransformerBlock(d_model, num_heads, d_ff, context_length, theta, eps=eps, token_positions=token_positions, device=device, dtype=dtype, weights=transformer_weights[i]))
+        self.norm = RMSNorm(d_model, eps=eps, device=device, dtype=dtype, weights=final_linear_weights)
+        self.linear = Linear(d_model, vocab_size, device=device, dtype=dtype, weights=head_weights)
+    
+    def forward(self,
+                token_ids: Int[Tensor, "... batch seq"],
+                ) -> Float[Tensor, "... batch seq vocab_size"]:
+        x = self.embedding.forward(token_ids)
+        for transformer_block in self.transformer_blocks:
+            x = transformer_block.forward(x)
+        x = self.norm.forward(x)
+        x = self.linear.forward(x)
+        return x
