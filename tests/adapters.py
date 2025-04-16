@@ -12,7 +12,7 @@ from torch import Tensor
 # teddi implementation imports
 from cs336_basics.train_bpe_tokenizer import train_bpe
 from cs336_basics.bpe_tokenizer import BPE_Tokenizer
-from cs336_basics.torch_modules.custom_modules import Linear, Embedding, RMSNorm, PositionwiseFeedforward, RotaryPositionalEmbedding, softmax, scaled_dot_product_attention, MultiheadSelfAttention, TransformerBlock, TransformerLM
+from cs336_basics.torch_modules.custom_modules import Linear, Embedding, RMSNorm, PositionwiseFeedforward, RotaryPositionalEmbedding, softmax, scaled_dot_product_attention, MultiheadSelfAttention, TransformerBlock, TransformerLM, cross_entropy_loss
 
 def run_linear(
     d_in: int,
@@ -453,7 +453,7 @@ def run_cross_entropy(inputs: Float[Tensor, " batch_size vocab_size"], targets: 
     Returns:
         Float[Tensor, ""]: The average cross-entropy loss across examples.
     """
-    raise NotImplementedError
+    return cross_entropy_loss(inputs, targets)
 
 
 def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: float) -> None:
@@ -547,6 +547,8 @@ def get_tokenizer(
     vocab: dict[int, bytes],
     merges: list[tuple[bytes, bytes]],
     special_tokens: list[str] | None = None,
+    vocab_filename=None, 
+    merges_filename=None
 ) -> Any:
     """Given a vocabulary, a list of merges, and a list of special tokens,
     return a BPE tokenizer that uses the provided vocab, merges, and special tokens.
@@ -563,7 +565,7 @@ def get_tokenizer(
     Returns:
         A BPE tokenizer that uses the provided vocab, merges, and special tokens.
     """
-    return BPE_Tokenizer(vocab, merges, special_tokens)
+    return BPE_Tokenizer(vocab, merges, special_tokens, vocab_filename=vocab_filename, merges_filename=merges_filename)
 
 
 def run_train_bpe(

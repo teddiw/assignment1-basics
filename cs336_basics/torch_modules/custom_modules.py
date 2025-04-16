@@ -177,15 +177,6 @@ class RotaryPositionalEmbedding(nn.Module):
         result = einsum(rotation_matrices_sliced, x, "... seq d_k1 d_k2, ... seq d_k2 -> ... seq d_k1")
         return result
 
-def softmax(x: Float[Tensor, "..."],
-            dim: int,
-            ) -> Float[Tensor, "..."]:
-    x_max = torch.max(x, dim=dim, keepdim=True)
-    x = x - x_max.values
-    x_exp = torch.exp(x)
-    x_exp_sum = torch.sum(x_exp, dim=dim, keepdim=True)
-    return x_exp/x_exp_sum
-
 def scaled_dot_product_attention(Q: Float[Tensor, "... n_queries d_k"],
                                  K: Float[Tensor, "... m_keys d_k"],
                                  V: Float[Tensor, "... m_keys d_v"],
@@ -399,3 +390,28 @@ class TransformerLM(nn.Module):
         x = self.norm.forward(x)
         x = self.linear.forward(x)
         return x
+
+def softmax(x: Float[Tensor, "..."],
+            dim: int,
+            ) -> Float[Tensor, "..."]:
+    x_max = torch.max(x, dim=dim, keepdim=True)
+    x = x - x_max.values
+    x_exp = torch.exp(x)
+    x_exp_sum = torch.sum(x_exp, dim=dim, keepdim=True)
+    return x_exp/x_exp_sum
+
+def cross_entropy_loss(logits: Float[Tensor, '... batch vocab_size'],
+                       targets: Int[Tensor, '... batch']
+                       ) -> Float[Tensor, '...']:
+    x_max = torch.max(logits, dim=-1, keepdim=True)
+    logits = logits - x_max.values
+    exp_logits_sum = reduce(torch.exp(logits), '... batch vocab_size -> batch', 'sum')
+    log_exp_logits_sum = torch.log(exp_logits_sum)
+
+    # get the logits for the target tokens
+    # targets = rearrange(targets, '... batch -> ... batch 1')
+    row_idxs = np.arange(logits.shape[-2])
+    target_logits = logits[row_idxs, targets] # '... batch'
+    losses_by_batch = log_exp_logits_sum - target_logits
+
+    return torch.mean(losses_by_batch)
