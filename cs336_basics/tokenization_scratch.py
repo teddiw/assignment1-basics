@@ -47,8 +47,6 @@ def main():
     with open(owt_merges_filename, 'rb') as handle:
         owt_train_merges = pickle.load(handle)
 
-    breakpoint()
-
     ts_vocab_filename = t_results_fp+'ts_train'+f'_vocab_newP_{ts_vocab_size}.pickle'
     with open(ts_vocab_filename, 'rb') as handle:
         ts_train_vocab = pickle.load(handle)
@@ -106,11 +104,11 @@ def main():
     # print(f'the throughput for the OWT tokenizer is {owt_text_num_bytes/(time.time() - time2)} bytes/seconds')
     # #END# time test without parallization
 
-    ts_small_filename = 't_results/ts_500_docs.txt'
+    ts_small_filename = ts_valid_input_path
     with open(ts_small_filename, "r") as f:
         ts_text = f.read()
 
-    owt_small_filename = 't_results/owt_500_docs.txt'
+    owt_small_filename = owt_valid_input_path
     with open(owt_small_filename, "r") as f:
         owt_text = f.read()
 
@@ -121,12 +119,12 @@ def main():
     all_ids = ts_tokenizer.parallel_encode(ts_small_filename)
             
     print(f'The throughput for the TS tokenizer is {ts_text_num_bytes/(time.time() - time1)} bytes/seconds')
-    ts_decoded_text = ts_tokenizer.decode(all_ids)
+    # ts_decoded_text = ts_tokenizer.decode(all_ids)
 
     time2 = time.time()
     all_ids = owt_tokenizer.parallel_encode(owt_small_filename)
     print(f'the throughput for the OWT tokenizer is {owt_text_num_bytes/(time.time() - time2)} bytes/seconds')
-    owt_decoded_text = owt_tokenizer.decode(all_ids)
+    # owt_decoded_text = owt_tokenizer.decode(all_ids)
 
     # time1 = time.time()
     # ts_tokenizer.encode(ts_text)
