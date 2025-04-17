@@ -49,7 +49,7 @@ class Embedding(nn.Module):
         if (weights != None):   
             self.embeddings = nn.Parameter(weights, requires_grad=True)
         else:
-            embeddings = torch.zeros([num_embeddings, embedding_dim], device=device, dtype=dtype)
+            embeddings = torch.zeros([num_embeddings, embedding_dim], device=device)
             initialized_embeddings = torch.nn.init.trunc_normal_(embeddings, mean=0, std=1, a=-3, b=3)
             self.embeddings = nn.Parameter(initialized_embeddings, requires_grad=True)
     def forward(self,
@@ -118,7 +118,7 @@ class PositionwiseFeedforward(nn.Module):
             weights1 = torch.zeros([self.d_ff, d_model], device=device, dtype=dtype)
             weights2 = torch.zeros([d_model, self.d_ff], device=device, dtype=dtype)
             weights3 = torch.zeros([self.d_ff, d_model], device=device, dtype=dtype)
-            sigma = np.sqrt(2/(self.d_ff, d_model))
+            sigma = np.sqrt(2/(self.d_ff + d_model))
             initialized_w1 = torch.nn.init.trunc_normal_(weights1, mean=0, std=sigma, a=-3*sigma, b=3*sigma)
             initialized_w2 = torch.nn.init.trunc_normal_(weights2, mean=0, std=sigma, a=-3*sigma, b=3*sigma)
             initialized_w3 = torch.nn.init.trunc_normal_(weights3, mean=0, std=sigma, a=-3*sigma, b=3*sigma)
@@ -231,7 +231,7 @@ class MultiheadSelfAttention(nn.Module):
             weights_k = torch.zeros([self.d_k*num_heads, d_model], device=device, dtype=dtype)
             weights_v = torch.zeros([self.d_k*num_heads, d_model], device=device, dtype=dtype)
             weights_o = torch.zeros([d_model, self.d_k*num_heads], device=device, dtype=dtype)
-            sigma = np.sqrt(2/(self.d_k*num_heads, d_model))
+            sigma = np.sqrt(2/(self.d_k*num_heads + d_model))
             initialized_wq = torch.nn.init.trunc_normal_(weights_q, mean=0, std=sigma, a=-3*sigma, b=3*sigma)
             initialized_wk = torch.nn.init.trunc_normal_(weights_k, mean=0, std=sigma, a=-3*sigma, b=3*sigma)
             initialized_wv = torch.nn.init.trunc_normal_(weights_v, mean=0, std=sigma, a=-3*sigma, b=3*sigma)
@@ -355,9 +355,12 @@ class TransformerLM(nn.Module):
         self.device = device
         self.dtype = dtype
 
+        transformer_weights = {}
+        embedding_weights = None
+        final_linear_weights = None
+        head_weights = None
         if (weights): # if testing
             embedding_weights =  weights['token_embeddings.weight']
-            transformer_weights = []
             for i in range(num_layers):
                 curr_weights = {}
                 curr_weights[f'attn.q_proj.weight'] = weights[f'layers.{i}.attn.q_proj.weight']
@@ -369,16 +372,15 @@ class TransformerLM(nn.Module):
                 curr_weights[f'ffn.w1.weight'] = weights[f'layers.{i}.ffn.w1.weight']
                 curr_weights[f'ffn.w2.weight'] = weights[f'layers.{i}.ffn.w2.weight']
                 curr_weights[f'ffn.w3.weight'] = weights[f'layers.{i}.ffn.w3.weight']
-                transformer_weights.append(curr_weights)
+                transformer_weights[i] = curr_weights
 
             final_linear_weights = weights['ln_final.weight']
-            head_weights = weights['lm_head.weight']
+            head_weights = weights['lm_head.weight']            
 
-
-        self.embedding = Embedding(num_embeddings=vocab_size, embedding_dim=context_length, device=device, dtype=dtype, weights=embedding_weights)
+        self.embedding = Embedding(num_embeddings=vocab_size, embedding_dim=d_model, device=device, dtype=dtype, weights=embedding_weights)
         self.transformer_blocks = []
         for i in range(num_layers):
-            self.transformer_blocks.append(TransformerBlock(d_model, num_heads, d_ff, context_length, theta, eps=eps, token_positions=token_positions, device=device, dtype=dtype, weights=transformer_weights[i]))
+            self.transformer_blocks.append(TransformerBlock(d_model, num_heads, d_ff, context_length, theta, eps=eps, token_positions=token_positions, device=device, dtype=dtype, weights=transformer_weights.get(i,None)))
         self.norm = RMSNorm(d_model, eps=eps, device=device, dtype=dtype, weights=final_linear_weights)
         self.linear = Linear(d_model, vocab_size, device=device, dtype=dtype, weights=head_weights)
     

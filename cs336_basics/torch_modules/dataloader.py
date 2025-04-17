@@ -21,11 +21,12 @@ class DataLoader(nn.Module):
         self.batch_size = batch_size
         self.context_length = context_length
         self.device = device
+        self.dtype = dtype
 
         assert data_file_path or (dataset is not None)
         if (data_file_path):
             self.data_file_path = data_file_path
-            self.data = np.load(data_file_path, mmap_mode='r', dtype=dtype) 
+            self.data = np.load(data_file_path, mmap_mode='r')
             self.data = torch.from_numpy(self.data)
         else:
             self.data = dataset
@@ -48,9 +49,11 @@ class DataLoader(nn.Module):
         sampled_indices = self.sequential_indices + starting_indices
 
         # Get the actual end index of the slice into self.data for train batches
-        train_batches = torch.from_numpy(self.data[sampled_indices]).to(self.device)
+        train_batches = self.data[sampled_indices].to(self.device)
+        train_batches = train_batches.to(self.dtype)
 
-        target_batches = torch.from_numpy(self.data[sampled_indices+1]).to(self.device)
+        target_batches = self.data[sampled_indices+1].to(self.device)
+        target_batches = target_batches.to(self.dtype)
 
         return (train_batches, target_batches)
         
