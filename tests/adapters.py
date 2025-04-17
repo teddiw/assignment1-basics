@@ -12,8 +12,8 @@ from torch import Tensor
 # teddi implementation imports
 from cs336_basics.train_bpe_tokenizer import train_bpe
 from cs336_basics.bpe_tokenizer import BPE_Tokenizer
-from cs336_basics.torch_modules.custom_modules import Linear, Embedding, RMSNorm, PositionwiseFeedforward, RotaryPositionalEmbedding, softmax, scaled_dot_product_attention, MultiheadSelfAttention, TransformerBlock, TransformerLM, cross_entropy_loss, learning_rate_scheduling, gradient_clipping
-from cs336_basics.torch_modules.adamw_opt import AdamW
+from cs336_basics.torch_modules.custom_modules import Linear, Embedding, RMSNorm, PositionwiseFeedforward, RotaryPositionalEmbedding, softmax, scaled_dot_product_attention, MultiheadSelfAttention, TransformerBlock, TransformerLM, cross_entropy_loss
+from cs336_basics.torch_modules.adamw_opt import AdamW, learning_rate_scheduling, gradient_clipping
 from cs336_basics.torch_modules.dataloader import DataLoader
 from cs336_basics.torch_modules.check_pointing import save_checkpoint, load_checkpoint  
 
@@ -425,7 +425,7 @@ def run_get_batch(
         language modeling labels.
     """
     data_loader = DataLoader(batch_size, context_length, device=device, dataset=dataset)
-    return data_loader.get_batch()
+    return data_loader.get_random_batch()
 
 # DataLoader(nn.Module):
 #     def __init__(self, 

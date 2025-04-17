@@ -44,6 +44,42 @@ class AdamW(torch.optim.Optimizer):
                 state["t"] = t + 1
         return loss
     
+
+def learning_rate_scheduling(t: int,
+                             a_max: float,
+                             a_min: float,
+                             T_w: int,
+                             T_c: int,
+                             ) -> float:
+    if (t < T_w):
+        return t*a_max/T_w
+    elif (t <= T_c):
+        return a_min + .5*(1 + np.cos((t - T_w)*np.pi / (T_c - T_w)))*(a_max - a_min)
+    else:
+        return a_min
+    
+def gradient_clipping(params: list[torch.Tensor],
+                     max_norm: float,
+                     eps: float = 1e-6,
+                     ) -> None:
+    temp_squared_sum = 0
+    for p in params:
+        if p.grad is None:
+            continue
+        temp_squared_sum += torch.sum(p.grad**2)
+    
+    l2_norm = np.sqrt(temp_squared_sum) 
+
+    if (l2_norm >= max_norm):
+        scale_factor = max_norm / (l2_norm + eps)
+        for p in params:
+            if p.grad is None:
+                continue
+            p.grad.data *= scale_factor
+    
+
+
+    
 if __name__ == "__main__":
     weights = torch.nn.Parameter(5*torch.randn((10,10)))
     opt = AdamW([weights], 
