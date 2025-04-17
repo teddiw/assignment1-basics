@@ -14,6 +14,7 @@ from cs336_basics.train_bpe_tokenizer import train_bpe
 from cs336_basics.bpe_tokenizer import BPE_Tokenizer
 from cs336_basics.torch_modules.custom_modules import Linear, Embedding, RMSNorm, PositionwiseFeedforward, RotaryPositionalEmbedding, softmax, scaled_dot_product_attention, MultiheadSelfAttention, TransformerBlock, TransformerLM, cross_entropy_loss, learning_rate_scheduling, gradient_clipping
 from cs336_basics.torch_modules.adamw_opt import AdamW
+from cs336_basics.torch_modules.dataloader import DataLoader
 
 def run_linear(
     d_in: int,
@@ -422,7 +423,16 @@ def run_get_batch(
         is the sampled input sequences, and the second tuple item is the corresponding
         language modeling labels.
     """
-    raise NotImplementedError
+    data_loader = DataLoader(batch_size, context_length, device=device, dataset=dataset)
+    return data_loader.get_batch()
+
+# DataLoader(nn.Module):
+#     def __init__(self, 
+#                  data_file_path: str,
+#                  batch_size: int,
+#                  context_length: int,
+#                  device: str = 'cpu',
+#                  ):
 
 
 def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, " ..."]:
