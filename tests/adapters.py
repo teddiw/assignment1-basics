@@ -15,6 +15,7 @@ from cs336_basics.bpe_tokenizer import BPE_Tokenizer
 from cs336_basics.torch_modules.custom_modules import Linear, Embedding, RMSNorm, PositionwiseFeedforward, RotaryPositionalEmbedding, softmax, scaled_dot_product_attention, MultiheadSelfAttention, TransformerBlock, TransformerLM, cross_entropy_loss, learning_rate_scheduling, gradient_clipping
 from cs336_basics.torch_modules.adamw_opt import AdamW
 from cs336_basics.torch_modules.dataloader import DataLoader
+from cs336_basics.torch_modules.check_pointing import save_checkpoint, load_checkpoint  
 
 def run_linear(
     d_in: int,
@@ -530,7 +531,7 @@ def run_save_checkpoint(
             we've completed.
         out (str | os.PathLike | BinaryIO | IO[bytes]): Path or file-like object to serialize the model, optimizer, and iteration to.
     """
-    raise NotImplementedError
+    return save_checkpoint(model, optimizer, iteration, out)
 
 
 def run_load_checkpoint(
@@ -551,7 +552,7 @@ def run_load_checkpoint(
     Returns:
         int: the previously-serialized number of iterations.
     """
-    raise NotImplementedError
+    return load_checkpoint(src, model, optimizer)
 
 
 def get_tokenizer(
