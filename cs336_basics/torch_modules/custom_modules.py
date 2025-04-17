@@ -182,6 +182,7 @@ def scaled_dot_product_attention(Q: Float[Tensor, "... n_queries d_k"],
                                  V: Float[Tensor, "... m_keys d_v"],
                                  mask: Float[Tensor, "... n_queries m_keys"] | None = None, # " ... seq seq"
                                  ) -> Float[Tensor, "... n_queries d_v"]:
+    # n_queries and m_keys are both seq. d_v is d_k.
 
     temp1 = einsum(Q, K, "... n_queries d_k, ... m_keys d_k -> ... n_queries m_keys") / np.sqrt(Q.shape[-1])
 
