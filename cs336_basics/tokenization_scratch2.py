@@ -7,40 +7,11 @@ from cs336_basics.bpe_tokenizer import BPE_Tokenizer
 from cs336_basics.helpers import get_text_from_file
 
 
-def get_n_docs(filename, n_docs):
-    docs = []
-    i = 1
-    while len(docs) <= n_docs:
-        text = get_text_from_file(filename, 0, i*1024)
-        docs = text.split('<|endoftext|>')
-        i += 1
-    return '<|endoftext|>'.join(docs[:n_docs])
-
-
-    # docs = []
-    # pos = 0
-    # curr_doc = '' 
-    # while len(docs) < n_docs:
-    #     text = get_text_from_file(filename, pos, 1024)
-    #     text_fragments = text.split('<|endoftext|>')
-    #     curr_doc += text_fragments[0]+'<|endoftext|>'
-    #     if (len(text_fragments) > 1):
-    #         docs.append(curr_doc)
-    #         curr_doc = ''
-    #     for i in range(1, len(text_fragments)):
-    #         if (len(text_fragments[i]) > 0):
-    #             docs.append(text_fragments[i])
-        
-    #     pos += 1024
-
 def main():
-    data_dir = '/data/a1-basics/' # '../data/'
+    data_dir = '/data/c-worledge/data/' # '../data/'
     save_dir = '/data/c-worledge/t_results/'
-    ts_valid_input_path= data_dir+"TinyStoriesV2-GPT4-valid.txt" 
-    ts_train_input_path= data_dir+"TinyStoriesV2-GPT4-train.txt" 
-    ts_vocab_size = 10000
-    owt_valid_input_path= data_dir+"owt_valid.txt"
-    owt_train_input_path= data_dir+"owt_train.txt"
+    
+    owt_train_input_path= data_dir+"owt_train1.txt"
     owt_valid_vocab_size = 32000
 
     t_results_fp = "t_results/"
@@ -53,14 +24,6 @@ def main():
     with open(owt_merges_filename, 'rb') as handle:
         owt_train_merges = pickle.load(handle)
 
-    ts_vocab_filename = save_dir+'ts_train'+f'_vocab_newP_{ts_vocab_size}.pickle'
-    with open(ts_vocab_filename, 'rb') as handle:
-        ts_train_vocab = pickle.load(handle)
-    ts_merges_filename = save_dir+'ts_train'+f'_merges_newP_{ts_vocab_size}.pickle'
-    with open(ts_merges_filename, 'rb') as handle:
-        ts_train_merges = pickle.load(handle)
-
-    ts_tokenizer = BPE_Tokenizer(ts_train_vocab, ts_train_merges, special_tokens, vocab_filename=ts_vocab_filename, merges_filename=ts_merges_filename)
     owt_tokenizer = BPE_Tokenizer(owt_train_vocab, owt_train_merges, special_tokens, vocab_filename=owt_vocab_filename, merges_filename=owt_merges_filename)
     #####################
     # ts_text = get_n_docs(ts_valid_input_path, 10) 
@@ -127,35 +90,21 @@ def main():
     # print(f'The total time is {time.time() - time0} seconds')
     # arr_loaded = np.load(f"{save_fp}.npy")
     ###############################################################################################################################################
-    ts_small_filename = ts_train_input_path # 't_results/ts_500_docs.txt' # '../tests/fixtures/tinystories_sample.txt'  # ts_valid_input_path
-    with open(ts_small_filename, "r") as f:
-        ts_text = f.read()
-    ts_text_num_bytes = len(ts_text.encode("utf-8"))
+    # ts_small_filename = ts_train_input_path # 't_results/ts_500_docs.txt' # '../tests/fixtures/tinystories_sample.txt'  # ts_valid_input_path
+    # with open(ts_small_filename, "r") as f:
+    #     ts_text = f.read()
+    # ts_text_num_bytes = len(ts_text.encode("utf-8"))
 
-    time1 = time.time()
-    all_ids.extend(ts_tokenizer.parallel_encode(ts_small_filename))
-    print(f'The throughput for the TS tokenizer is {ts_text_num_bytes/(time.time() - time1)} bytes/seconds')
+    # time1 = time.time()
+    # all_ids.extend(ts_tokenizer.parallel_encode(ts_small_filename))
+    # print(f'The throughput for the TS tokenizer is {ts_text_num_bytes/(time.time() - time1)} bytes/seconds')
 
-    save_fp = save_dir+'ts_train_tokens'
-    np.save(f"{save_fp}.npy", np.array(all_ids).astype(np.uint16))
-    print(f'The total time is {time.time() - time0} seconds')
-    arr_loaded = np.load(f"{save_fp}.npy")
-    ################################################################################################################################################
-    owt_small_filename = owt_valid_input_path # 't_results/ts_500_docs.txt' # '../tests/fixtures/tinystories_sample.txt'  # ts_valid_input_path
-    with open(owt_small_filename, "r") as f:
-        owt_text = f.read()
-    owt_text_num_bytes = len(owt_text.encode("utf-8"))
-
-    time1 = time.time()
-    all_ids.extend(owt_tokenizer.parallel_encode(owt_small_filename))
-    print(f'The throughput for the OWT tokenizer is {owt_text_num_bytes/(time.time() - time1)} bytes/seconds')
-
-    save_fp = save_dir+'owt_val_tokens2'
-    np.save(f"{save_fp}.npy", np.array(all_ids).astype(np.uint16))
-    print(f'The total time is {time.time() - time0} seconds')
-    arr_loaded = np.load(f"{save_fp}.npy")
-    ################################################################################################################################################
-    # owt_small_filename = owt_train_input_path # 't_results/ts_500_docs.txt' # '../tests/fixtures/tinystories_sample.txt'  # ts_valid_input_path
+    # save_fp = save_dir+'ts_train_tokens'
+    # np.save(f"{save_fp}.npy", np.array(all_ids).astype(np.uint16))
+    # print(f'The total time is {time.time() - time0} seconds')
+    # arr_loaded = np.load(f"{save_fp}.npy")
+    # ################################################################################################################################################
+    # owt_small_filename = owt_valid_input_path # 't_results/ts_500_docs.txt' # '../tests/fixtures/tinystories_sample.txt'  # ts_valid_input_path
     # with open(owt_small_filename, "r") as f:
     #     owt_text = f.read()
     # owt_text_num_bytes = len(owt_text.encode("utf-8"))
@@ -164,9 +113,23 @@ def main():
     # all_ids.extend(owt_tokenizer.parallel_encode(owt_small_filename))
     # print(f'The throughput for the OWT tokenizer is {owt_text_num_bytes/(time.time() - time1)} bytes/seconds')
 
-    # save_fp = save_dir+'owt_train_tokens'
+    # save_fp = save_dir+'owt_val_tokens2'
     # np.save(f"{save_fp}.npy", np.array(all_ids).astype(np.uint16))
     # print(f'The total time is {time.time() - time0} seconds')
+    # arr_loaded = np.load(f"{save_fp}.npy")
+    ################################################################################################################################################
+    owt_small_filename = owt_train_input_path # 't_results/ts_500_docs.txt' # '../tests/fixtures/tinystories_sample.txt'  # ts_valid_input_path
+    # with open(owt_small_filename, "r") as f:
+    #     owt_text = f.read()
+    # owt_text_num_bytes = len(owt_text.encode("utf-8"))
+
+    time1 = time.time()
+    all_ids.extend(owt_tokenizer.parallel_encode(owt_small_filename))
+    # print(f'The throughput for the OWT tokenizer is {owt_text_num_bytes/(time.time() - time1)} bytes/seconds')
+
+    save_fp = save_dir+'owt_train_tokens1'
+    np.save(f"{save_fp}.npy", np.array(all_ids).astype(np.uint16))
+    print(f'The total time is {time.time() - time0} seconds')
     # arr_loaded = np.load(f"{save_fp}.npy")
 
     ################################################################################################################################################
