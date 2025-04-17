@@ -1,34 +1,58 @@
 import argparse
 import torch
+import os
+import wandb
 from cs336_basics.torch_modules.custom_modules import TransformerLM, cross_entropy_loss 
 from cs336_basics.torch_modules.adamw_opt import AdamW, learning_rate_scheduling, gradient_clipping
 from cs336_basics.torch_modules.dataloader import DataLoader
 from cs336_basics.torch_modules.check_pointing import save_checkpoint, load_checkpoint  
 
-
 def main(args):
+    # WandB setup
+    wandb.login()
+    run = wandb.init(
+                    project="cs336_a1",  # Specify your project
+                    name=args.checkpoint_tag,  # Specify your run name
+                    config=args, # args, # TODO
+                )
+
+    # If debugging
+    if (args.debug):
+        args['checkpoint_tag'] = 'debug'
+
     # First things first
     data_dir = '/data/c-worledge/t_results/' 
-    save_dir = '/data/c-worledge/a1_checkpoints/'
+    save_dir = f'/data/c-worledge/a1_checkpoints/{args.checkpoint_tag}/'
+      
+    # Create the save directory if it doesn't exist
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+
+    # Set device and dtype
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     dtype = getattr(torch, args.dtype) 
 
     # Initialize the dataloader
-    if args.train_data_str == 'tst':
+    if args.train_data_str == 'ts':
         train_data_fp = data_dir + "ts_train_tokens.npy" 
-    elif args.train_data_str == 'tsv':
-        train_data_fp = data_dir + "ts_val_tokens.npy"
-    elif args.train_data_str == 'owtt':
+        val_data_fp = data_dir + "ts_val_tokens.npy"
+    elif args.train_data_str == 'owt':
         train_data_fp = data_dir + "" # TODO merge the two files and its name here
-    elif args.train_data_str == 'owtv':
-        train_data_fp = data_dir + "owt_val_tokens.npy"
+        val_data_fp = data_dir + "owt_val_tokens.npy"
     else:
-        raise ValueError("Invalid train data string. Must be 'tst', 'tsv', 'owtt', or 'owtv'.")
+        raise ValueError("Invalid train data string. Must be 'ts' or 'owt'.")
     
     train_dataset = DataLoader(
         batch_size=args.batch_size,
         context_length=args.context_length,
         data_file_path=train_data_fp,
+        dtype=dtype,
+    )
+
+    val_dataset = DataLoader(
+        batch_size=args.batch_size,
+        context_length=args.context_length,
+        data_file_path=val_data_fp,
         dtype=dtype,
     )
 
@@ -73,32 +97,44 @@ def main(args):
         logits = model(train_batch)
 
         # compute the loss
-        # (logits: Float[Tensor, '... batch vocab_size'],
-        #                targets: Int[Tensor, '... batch']
-        loss = cross_entropy_loss(logits, target_batch)
-        loss.backward()
-        print(loss.item())
-
-        optimizer.step()
+        train_loss = cross_entropy_loss(logits, target_batch)
+        train_loss.backward()
+        print(train_loss.item())
 
         # take an optimizer step
+        optimizer.step()
 
+        # Implement validation
+        if (t%2 == 0):
+            val_loss = run_validation(model, val_dataset, device)
+            if (not args.debug):
+                wandb.log({"val_loss": val_loss.item()})
 
+        # Implement checkpointing
+        if (t % 10 == 0):
+            save_checkpoint(model, optimizer, t, f'{save_dir}/checkpoint_{t}.pt')
+        
+        if (not args.debug):
+            # Implement loss tracking (WandB)
+            wandb.log({"train_loss": train_loss.item()})
 
-    # cross_entropy_loss(logits: Float[Tensor, '... batch vocab_size'],
-    #                    targets: Int[Tensor, '... batch']
-    #                    ) -> Float[Tensor, '...']
-
-    # Implement checkpointing
-    # Implement loss tracking (WandB)
-
-
+def run_validation(model:torch.nn.Module, 
+                    val_dataset:DataLoader, 
+                    device:str,
+                    ):
+    for t in range(3): # TODO increase this
+        x_batch, y_batch = val_dataset.get_random_batch()
+        x_batch = x_batch.to(device)
+        y_batch = y_batch.to(device)
+        logits = model(x_batch)
+        val_loss = cross_entropy_loss(logits, y_batch)
+        return val_loss
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--batch_size', type=str, default=4, help='Number of sequences in a batch')
     parser.add_argument('--context_length', type=int, default=256, help='Number of tokens in a sequence')
-    parser.add_argument('--train_data_str', type=str, default='tsv', help='Train data string') # 'tst', 'tsv','owtt', or 'owtv'
+    parser.add_argument('--train_data_str', type=str, default='ts', help='Train data string') # 'ts', or 'owt'
     parser.add_argument('--d_model', type=int, default=512, help='Dimension of the model')
     parser.add_argument('--num_heads', type=int, default=16, help='Number of attention heads')
     parser.add_argument('--vocab_size', type=int, default=10000, help='Vocabulary size')
@@ -113,8 +149,9 @@ if __name__ == "__main__":
     parser.add_argument('--beta2', type=float, default=0.999, help='Beta2 value for the optimizer')
     parser.add_argument('--weight_decay', type=float, default=0.01, help='Weight decay for the optimizer') # TODO get default value
     parser.add_argument('--optimizer_eps', type=float, default=1e-8, help='Epsilon value for the optimizer')
-    parser.add_argument('--wandb_project', type=str, default='cs336_a1', help='WandB project name')
     parser.add_argument('--total_tokens_processed', type=int, default=327680000, help='batch_size*step_count*context_length')
+    parser.add_argument('--checkpoint_tag', type=str, default='debug', help='name of the directory for the checkpoint files')
+    parser.add_argument('--debug', action='store_true', help='Enable debug mode')
     
     # TODO May want to set these based off of args.lr and step_count
     parser.add_argument('--a_max', type=float, default=1.0, help='Maximum value for parameter a')
