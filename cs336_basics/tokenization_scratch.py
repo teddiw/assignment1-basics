@@ -152,25 +152,25 @@ def main():
     all_ids.extend(owt_tokenizer.parallel_encode(owt_small_filename))
     print(f'The throughput for the OWT tokenizer is {owt_text_num_bytes/(time.time() - time1)} bytes/seconds')
 
-    save_fp = 't_results/owt_val_tokens'
+    save_fp = 't_results/owt_val_tokens2'
     np.save(f"{save_fp}.npy", np.array(all_ids).astype(np.uint16))
     print(f'The total time is {time.time() - time0} seconds')
-    arr_loaded = np.load(f"{save_fp}.npy")
+    # arr_loaded = np.load(f"{save_fp}.npy")
 
-    owt_small_filename = owt_train_input_path # 't_results/ts_500_docs.txt' # '../tests/fixtures/tinystories_sample.txt'  # ts_valid_input_path
-    with open(owt_small_filename, "r") as f:
-        owt_text = f.read()
-    owt_text_num_bytes = len(owt_text.encode("utf-8"))
+    # owt_small_filename = owt_train_input_path # 't_results/ts_500_docs.txt' # '../tests/fixtures/tinystories_sample.txt'  # ts_valid_input_path
+    # with open(owt_small_filename, "r") as f:
+    #     owt_text = f.read()
+    # owt_text_num_bytes = len(owt_text.encode("utf-8"))
 
-    time1 = time.time()
-    all_ids.extend(owt_tokenizer.parallel_encode(owt_small_filename))
-    print(f'The throughput for the OWT tokenizer is {owt_text_num_bytes/(time.time() - time1)} bytes/seconds')
+    # time1 = time.time()
+    # all_ids.extend(owt_tokenizer.parallel_encode(owt_small_filename))
+    # print(f'The throughput for the OWT tokenizer is {owt_text_num_bytes/(time.time() - time1)} bytes/seconds')
 
-    save_fp = 't_results/owt_train_tokens'
-    np.save(f"{save_fp}.npy", np.array(all_ids).astype(np.uint16))
-    print(f'The total time is {time.time() - time0} seconds')
-    arr_loaded = np.load(f"{save_fp}.npy")
-    breakpoint()
+    # save_fp = 't_results/owt_train_tokens'
+    # np.save(f"{save_fp}.npy", np.array(all_ids).astype(np.uint16))
+    # print(f'The total time is {time.time() - time0} seconds')
+    # arr_loaded = np.load(f"{save_fp}.npy")
+    # breakpoint()
 
 
 
