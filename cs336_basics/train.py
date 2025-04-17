@@ -60,20 +60,26 @@ def main(args):
 
     # Train
     step_count = args.total_tokens_processed // (args.batch_size * args.context_length)
-    for t in range(step_count):
+    for t in range(10): # TODO revert
         # get the data batch
         train_batch, target_batch = train_dataset.get_random_batch()
         train_batch = train_batch.to(device)
         target_batch = target_batch.to(device)
 
+        # zero gradients for new batch
+        optimizer.zero_grad()
+
         # compute a forward pass
-        breakpoint()
         logits = model(train_batch)
 
         # compute the loss
+        # (logits: Float[Tensor, '... batch vocab_size'],
+        #                targets: Int[Tensor, '... batch']
         loss = cross_entropy_loss(logits, target_batch)
-        gradients = loss.backward()
-        breakpoint()
+        loss.backward()
+        print(loss.item())
+
+        optimizer.step()
 
         # take an optimizer step
 

@@ -403,9 +403,12 @@ def softmax(x: Float[Tensor, "..."],
     x_exp_sum = torch.sum(x_exp, dim=dim, keepdim=True)
     return x_exp/x_exp_sum
 
-def cross_entropy_loss(logits: Float[Tensor, '... batch vocab_size'],
-                       targets: Int[Tensor, '... batch']
+def cross_entropy_loss(logits: Float[Tensor, '... batch seq_len vocab_size'],
+                       targets: Int[Tensor, '... batch seq_len']
                        ) -> Float[Tensor, '...']:
+
+    logits = rearrange(logits, '... batch seq_len vocab_size -> ... (batch seq_len) vocab_size')
+    targets = rearrange(targets, '... batch seq_len -> ... (batch seq_len)')
     x_max = torch.max(logits, dim=-1, keepdim=True)
     logits = logits - x_max.values
     exp_logits_sum = reduce(torch.exp(logits), '... batch vocab_size -> batch', 'sum')
