@@ -113,18 +113,21 @@ def main(args):
         optimizer.step(scheduled_lr=lr_t)
 
         # get val loss
-        avg_val_loss = run_validation(model, val_dataset, device, 3)
+        if (t % 100 == 0):
+            avg_val_loss = run_validation(model, val_dataset, device, 10)
+            if (not args.debug):
+                wandb.log({"val_loss": avg_val_loss
+                })
 
         # Implement loss tracking (WandB)
         if (not args.debug):
             wandb.log({"train_loss": train_loss.item(),
-                       "val_loss": avg_val_loss,
                        "wallclock_time": time.time() - start_time
             })
 
         # Implement checkpointing
-        # if (t % 100000 == 0):
-        #     save_checkpoint(model, optimizer, t, f'{save_dir}/checkpoint_{t}.pt')
+        if (t % 100 == 0):
+            save_checkpoint(model, optimizer, t, f'{save_dir}/checkpoint.pt')
     
     # Save the final model 
     save_checkpoint(model, optimizer, t, f'{save_dir}/final.pt')
@@ -162,7 +165,7 @@ def run_validation(model:torch.nn.Module,
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--batch_size', type=str, default=4, help='Number of sequences in a batch')
+    parser.add_argument('--batch_size', type=int, default=32, help='Number of sequences in a batch')
     parser.add_argument('--context_length', type=int, default=256, help='Number of tokens in a sequence')
     parser.add_argument('--train_data_str', type=str, default='ts', help='Train data string') # 'ts', or 'owt'
     parser.add_argument('--d_model', type=int, default=512, help='Dimension of the model')
