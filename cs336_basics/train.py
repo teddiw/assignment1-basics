@@ -86,7 +86,7 @@ def main(args):
     step_count = args.total_tokens_processed // (args.batch_size * args.context_length)
     start_time = time.time()
 
-    # step_count = 10  
+    # step_count = 10 
     for t in range(step_count):
         
         # get the data batch
@@ -113,30 +113,52 @@ def main(args):
         optimizer.step(scheduled_lr=lr_t)
 
         # get val loss
-        val_loss = run_validation(model, val_dataset, device)
+        avg_val_loss = run_validation(model, val_dataset, device, 3)
 
         # Implement loss tracking (WandB)
         if (not args.debug):
             wandb.log({"train_loss": train_loss.item(),
-                       "val_loss": val_loss.item(),
+                       "val_loss": avg_val_loss,
                        "wallclock_time": time.time() - start_time
             })
 
         # Implement checkpointing
-        if (t % 10 == 0):
-            save_checkpoint(model, optimizer, t, f'{save_dir}/checkpoint_{t}.pt')
+        # if (t % 100000 == 0):
+        #     save_checkpoint(model, optimizer, t, f'{save_dir}/checkpoint_{t}.pt')
+    
+    # Save the final model 
+    save_checkpoint(model, optimizer, t, f'{save_dir}/final.pt')
+
+    # Get the final val loss
+    avg_val_loss = run_validation(model, val_dataset, device, 1000) 
+
+    print(f"Final validation loss for a_max={args.lr}: {avg_val_loss}")
+
+    if (not args.debug):
+        wandb.log({
+            "final_val_loss": avg_val_loss,
+            })
+
+    # finish wandb run
+    wandb.finish()
+       
 
 def run_validation(model:torch.nn.Module, 
                     val_dataset:DataLoader, 
                     device:str,
+                    num_samples:int,
                     ):
-    for t in range(3): # TODO increase this
+    val_loss_sum = 0
+    for t in range(num_samples): 
         x_batch, y_batch = val_dataset.get_random_batch()
         x_batch = x_batch.to(device)
         y_batch = y_batch.to(device)
         logits = model(x_batch)
         val_loss = cross_entropy_loss(logits, y_batch)
-        return val_loss
+        val_loss_sum += val_loss.item()
+
+    avg_val_loss = val_loss_sum / num_samples
+    return avg_val_loss
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
