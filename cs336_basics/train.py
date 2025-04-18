@@ -14,7 +14,7 @@ def main(args):
     run = wandb.init(
                     project="cs336_a1",  # Specify your project
                     name=args.checkpoint_tag,  # Specify your run name
-                    config=args, # args, # TODO
+                    config=args, 
                 )
 
     # If debugging
@@ -30,7 +30,8 @@ def main(args):
         os.makedirs(save_dir)
 
     # Set device and dtype
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    # device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    device = args.device
     dtype = getattr(torch, args.dtype) 
 
     # Initialize the dataloader
@@ -85,7 +86,7 @@ def main(args):
     step_count = args.total_tokens_processed // (args.batch_size * args.context_length)
     start_time = time.time()
 
-    step_count = 10  # TODO remove
+    # step_count = 10  
     for t in range(step_count):
         
         # get the data batch
@@ -162,6 +163,7 @@ if __name__ == "__main__":
     parser.add_argument('--a_min', type=float, default=0, help='Minimum value for parameter a')
     parser.add_argument('--T_w_fraction', type=float, default=0.1, help='Fraction of step_count for T_w')
     parser.add_argument('--T_c_fraction', type=float, default=0.8, help='Fraction of step_count for T_c')
+    parser.add_argument('--device', type=str, default='cuda', help='Device to run the model on')
 
     args = parser.parse_args()
     main(args)

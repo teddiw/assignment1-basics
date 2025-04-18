@@ -57,7 +57,7 @@ def learning_rate_scheduling(t: int,
     if (t < T_w):
         return t*a_max/T_w
     elif (t <= T_c):
-        return a_min + .5*(1 + np.cos((t - T_w)*np.pi / (T_c - T_w)))*(a_max - a_min)
+        return a_min + .5*(1 + math.cos((t - T_w)*math.pi / (T_c - T_w)))*(a_max - a_min)
     else:
         return a_min
     
@@ -71,7 +71,7 @@ def gradient_clipping(params: list[torch.Tensor],
             continue
         temp_squared_sum += torch.sum(p.grad**2)
     
-    l2_norm = np.sqrt(temp_squared_sum) 
+    l2_norm = math.sqrt(temp_squared_sum) 
 
     if (l2_norm >= max_norm):
         scale_factor = max_norm / (l2_norm + eps)
