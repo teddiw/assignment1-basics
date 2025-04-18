@@ -18,10 +18,13 @@ class AdamW(torch.optim.Optimizer):
         defaults = {'lr': lr, 'betas':betas, 'weight_decay': weight_decay, 'eps': eps}
         super().__init__(params, defaults)
 
-    def step(self, closure: Optional[Callable] = None):
+    def step(self, scheduled_lr: int | None, closure: Optional[Callable] = None):
         loss = None if closure is None else closure()
         for group in self.param_groups:
-            lr = group['lr']
+            if (scheduled_lr):
+                lr = scheduled_lr
+            else:
+                lr = group['lr']
             betas = group['betas']
             weight_decay = group['weight_decay']
             eps = group['eps']

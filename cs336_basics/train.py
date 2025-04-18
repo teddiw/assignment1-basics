@@ -2,6 +2,7 @@ import argparse
 import torch
 import os
 import wandb
+import time
 from cs336_basics.torch_modules.custom_modules import TransformerLM, cross_entropy_loss 
 from cs336_basics.torch_modules.adamw_opt import AdamW, learning_rate_scheduling, gradient_clipping
 from cs336_basics.torch_modules.dataloader import DataLoader
@@ -72,8 +73,6 @@ def main(args):
     model.to(device)
 
     # Initialize the optimizer
-    # TODO where to set max_norm for gradient clipping (and where does it happen in AdamW?)
-    # TODO how can I use learning_rate_scheduling with AdamW?
     optimizer = AdamW(
         model.parameters(),
         lr=args.lr,
@@ -84,7 +83,11 @@ def main(args):
 
     # Train
     step_count = args.total_tokens_processed // (args.batch_size * args.context_length)
-    for t in range(10): # TODO revert
+    start_time = time.time()
+
+    step_count = 10  # TODO remove
+    for t in range(step_count):
+        
         # get the data batch
         train_batch, target_batch = train_dataset.get_random_batch()
         train_batch = train_batch.to(device)
@@ -101,22 +104,26 @@ def main(args):
         train_loss.backward()
         print(train_loss.item())
 
-        # take an optimizer step
-        optimizer.step()
+        # Gradient clipping
+        gradient_clipping(model.parameters(), args.max_norm)
+        
+        # Take an optimizer step with loss scheduling
+        lr_t = learning_rate_scheduling(t, args.lr, args.a_min, int(step_count * args.T_w_fraction), int(step_count * args.T_c_fraction)) 
+        optimizer.step(scheduled_lr=lr_t)
 
-        # Implement validation
-        if (t%2 == 0):
-            val_loss = run_validation(model, val_dataset, device)
-            if (not args.debug):
-                wandb.log({"val_loss": val_loss.item()})
+        # get val loss
+        val_loss = run_validation(model, val_dataset, device)
+
+        # Implement loss tracking (WandB)
+        if (not args.debug):
+            wandb.log({"train_loss": train_loss.item(),
+                       "val_loss": val_loss.item(),
+                       "wallclock_time": time.time() - start_time
+            })
 
         # Implement checkpointing
         if (t % 10 == 0):
             save_checkpoint(model, optimizer, t, f'{save_dir}/checkpoint_{t}.pt')
-        
-        if (not args.debug):
-            # Implement loss tracking (WandB)
-            wandb.log({"train_loss": train_loss.item()})
 
 def run_validation(model:torch.nn.Module, 
                     val_dataset:DataLoader, 
@@ -142,22 +149,19 @@ if __name__ == "__main__":
     parser.add_argument('--theta', type=float, default=10000, help='Theta value for the model')
     parser.add_argument('--num_layers', type=int, default=4, help='Number of layers in the model')
     parser.add_argument('--model_eps', type=float, default=1e-5, help='Epsilon value for the model')
-    parser.add_argument('--max_norm', type=float, default=1.0, help='Max norm for gradient clipping') # TODO get default value
+    parser.add_argument('--max_norm', type=float, default=1e-2, help='Max norm for gradient clipping') 
     parser.add_argument('--dtype', type=str, default='float32', help='Data type for the model') 
-    parser.add_argument('--lr', type=float, default=1e-3, help='Learning rate for the optimizer') # TODO get default value
+    parser.add_argument('--lr', type=float, default=1e-3, help='Learning rate for the optimizer')
     parser.add_argument('--beta1', type=float, default=0.9, help='Beta1 value for the optimizer')
     parser.add_argument('--beta2', type=float, default=0.999, help='Beta2 value for the optimizer')
-    parser.add_argument('--weight_decay', type=float, default=0.01, help='Weight decay for the optimizer') # TODO get default value
+    parser.add_argument('--weight_decay', type=float, default=0.01, help='Weight decay for the optimizer') 
     parser.add_argument('--optimizer_eps', type=float, default=1e-8, help='Epsilon value for the optimizer')
     parser.add_argument('--total_tokens_processed', type=int, default=327680000, help='batch_size*step_count*context_length')
     parser.add_argument('--checkpoint_tag', type=str, default='debug', help='name of the directory for the checkpoint files')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
-    
-    # TODO May want to set these based off of args.lr and step_count
-    parser.add_argument('--a_max', type=float, default=1.0, help='Maximum value for parameter a')
-    parser.add_argument('--a_min', type=float, default=0.0, help='Minimum value for parameter a')
-    parser.add_argument('--T_w', type=int, default=100, help='Warmup steps for learning rate scheduling')
-    parser.add_argument('--T_c', type=int, default=1000, help='Cooldown steps for learning rate scheduling')
+    parser.add_argument('--a_min', type=float, default=0, help='Minimum value for parameter a')
+    parser.add_argument('--T_w_fraction', type=float, default=0.1, help='Fraction of step_count for T_w')
+    parser.add_argument('--T_c_fraction', type=float, default=0.8, help='Fraction of step_count for T_c')
 
     args = parser.parse_args()
     main(args)
