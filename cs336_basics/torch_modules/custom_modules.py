@@ -326,11 +326,20 @@ class TransformerBlock(nn.Module):
     def forward(self, 
                 x: Float[Tensor, " ... batch seq d_model"],
                 ) -> Float[Tensor, " ... batch seq d_model"]:
+        # TODO revert to original
         step1 = self.rms_norm1.forward(x)
         step2 = self.multihead_attn.forward(step1)
         step3 = x + step2
         step4 = self.rms_norm2.forward(step3)
         step5 = self.ffn.forward(step4)
+
+        # # No RMSNorm 
+        # step1 = x
+        # step2 = self.multihead_attn.forward(step1)
+        # step3 = x + step2
+        # step4 = step3
+        # step5 = self.ffn.forward(step4)
+
         return step5 + step3
     
 class TransformerLM(nn.Module):
@@ -390,7 +399,7 @@ class TransformerLM(nn.Module):
         x = self.embedding.forward(token_ids)
         for transformer_block in self.transformer_blocks:
             x = transformer_block.forward(x)
-        x = self.norm.forward(x)
+        x = self.norm.forward(x) # TODO revert to original (rms)
         x = self.linear.forward(x)
         return x
 

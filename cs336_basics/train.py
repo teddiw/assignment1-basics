@@ -106,7 +106,7 @@ def main(args):
         print(train_loss.item())
 
         # Gradient clipping
-        gradient_clipping(model.parameters(), args.max_norm)
+        gradient_norm = gradient_clipping(model.parameters(), args.max_norm)
         
         # Take an optimizer step with loss scheduling
         lr_t = learning_rate_scheduling(t, args.lr, args.a_min, int(step_count * args.T_w_fraction), int(step_count * args.T_c_fraction)) 
@@ -122,7 +122,8 @@ def main(args):
         # Implement loss tracking (WandB)
         if (not args.debug):
             wandb.log({"train_loss": train_loss.item(),
-                       "wallclock_time": time.time() - start_time
+                       "wallclock_time": time.time() - start_time,
+                       "gradient_norm": gradient_norm.item()
             })
 
         # Implement checkpointing

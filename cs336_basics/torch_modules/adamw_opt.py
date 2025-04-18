@@ -79,6 +79,7 @@ def gradient_clipping(params: list[torch.Tensor],
             if p.grad is None:
                 continue
             p.grad.data *= scale_factor
+    return l2_norm
     
 
 
